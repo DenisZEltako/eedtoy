@@ -21,14 +21,23 @@ jobs:
       - name: Node.js einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Abhängigkeiten installieren
-        run: npm ci --include=dev
+        shell: pwsh
+        run: |
+          npm config set registry https://registry.npmjs.org/
+          npm ci --include=dev --no-audit --no-fund
 
       - name: Build-Werkzeuge prüfen
-        run: npx vite --version
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "node_modules/.bin/vite.cmd")) {
+            throw "Vite wurde nicht lokal installiert."
+          }
+          .\node_modules\.bin\vite.cmd --version
 
       - name: Frontend prüfen
         run: npm run build
