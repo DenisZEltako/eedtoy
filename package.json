@@ -11,8 +11,8 @@
     "build:exe": "npm run build:installer",
     "python:deps": "python -m pip install -r python/requirements.txt",
     "python:detect": "python python/detect_gateway.py --mode auto",
-    "build:dir": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& vite build && electron-builder --win --x64 --dir",
-    "build:installer": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& vite build && electron-builder --win nsis --x64",
+    "build:dir": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& vite build && electron-builder --win --x64 --dir --publish never",
+    "build:installer": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& vite build && electron-builder --win nsis --x64 --publish never",
     "build:all": "npm run build:installer",
     "python:bootstrap": "powershell -NoProfile -ExecutionPolicy Bypass -File python/bootstrap_runtime_windows.ps1"
   },
