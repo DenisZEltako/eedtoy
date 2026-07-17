@@ -25,7 +25,7 @@ jobs:
           cache: npm
 
       - name: Abhängigkeiten installieren
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Frontend prüfen
         run: npm run build
