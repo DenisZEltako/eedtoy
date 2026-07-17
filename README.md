@@ -3,6 +3,12 @@
 EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14-Import und den YAML-Export für Home Assistant.
 
 > **Hinweis:** EEDTOY wird ausschließlich privat entwickelt und ist kein offizielles Produkt der ELTAKO GmbH. ELTAKO-Produktnamen werden ausschließlich zur Beschreibung der Gerätekompatibilität verwendet.
+>
+## Download
+
+➡️ **[Aktuelle Windows-Version herunterladen](https://github.com/DenisZEltako/eedtoy/releases/latest)**
+
+Unter **Assets** die Datei `EEDTOY-Setup-1.0.80.exe` herunterladen.
 
 ## Funktionen
 
