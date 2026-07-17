@@ -23,7 +23,7 @@ EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14
 
 Die Anwendung und der Installer sind derzeit nicht digital signiert. Windows kann deshalb eine SmartScreen-Warnung anzeigen.
 
-## Entwicklung
+## Manuelle Installation
 
 ### Voraussetzungen
 
