@@ -27,6 +27,9 @@ jobs:
       - name: Abhängigkeiten installieren
         run: npm ci --include=dev
 
+      - name: Build-Werkzeuge prüfen
+        run: npx vite --version
+
       - name: Frontend prüfen
         run: npm run build
 
