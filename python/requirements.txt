@@ -1,5 +1,4 @@
 
 eltako14bus
-esp2-gateway-adapter
 pyserial
 pyyaml>=6.0.1

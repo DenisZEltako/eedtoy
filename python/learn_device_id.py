@@ -209,57 +209,6 @@ def listen_rs485(port: str, mode: str, timeout: float) -> dict:
             pass
 
 
-def listen_usb300(port: str, timeout: float) -> dict:
-    from esp2_gateway_adapter.esp3_serial_com import ESP3SerialCommunicator
-    event = threading.Event()
-    result = {"ok": False}
-    seen = {"count": 0}
-
-    def callback(message: Any) -> None:
-        seen["count"] += 1
-        parsed = extract_id_from_message(message)
-        if parsed and parsed.get("id"):
-            result.update({
-                "ok": True,
-                "id": parsed["id"],
-                "rorg": parsed.get("rorg"),
-                "protocol": "esp3-python-esp2-adapter",
-                "baudRate": 57600,
-                "message_type": parsed.get("message_type"),
-                "source": parsed.get("source"),
-            })
-            event.set()
-
-    bus = None
-    try:
-        bus = ESP3SerialCommunicator(
-            port,
-            callback=callback,
-            baud_rate=57600,
-            auto_reconnect=False,
-            esp2_translation_enabled=True,
-        )
-        bus.start()
-        if not bus.is_serial_connected.wait(timeout=2):
-            return {"ok": False, "error": f"USB300 an {port} konnte nicht geoeffnet werden."}
-        event.wait(timeout)
-        if result.get("ok"):
-            return result
-        return {
-            "ok": False,
-            "error": f"Kein EnOcean-Telegramm innerhalb von {int(timeout)} Sekunden ueber USB300 empfangen. Empfangene Nachrichten: {seen['count']}",
-            "baudRate": 57600,
-            "protocol": "esp3-python-esp2-adapter",
-        }
-    finally:
-        try:
-            if bus is not None:
-                bus.stop()
-                bus.join(0.5)
-        except Exception:
-            pass
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True)
@@ -272,11 +221,9 @@ def main() -> int:
         mode = "fam14"
     elif mode in ("fam-usb", "famusb"):
         mode = "fam-usb"
-    elif mode in ("usb300", "esp3"):
-        mode = "usb300"
 
     try:
-        result = listen_usb300(args.port, args.timeout) if mode == "usb300" else listen_rs485(args.port, mode, args.timeout)
+        result = listen_rs485(args.port, mode, args.timeout)
     except Exception as exc:
         log("fatal", repr(exc))
         import traceback

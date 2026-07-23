@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const APP_VERSION = "1.0.81";
+const APP_VERSION = "1.0.82";
 
 // ─────────────────────────────────────────────────────────────────
 // EEP Database — Eltako Home Assistant Integration
@@ -345,7 +345,7 @@ function generateYaml(gateway, devices, extraGateways = [], pct14BaseId = "") {
 
   let out = `# ============================================================\n`;
   out += `# EEDTOY – ELTAKO EnOcean Device to YAML Generator\n`;
-  out += `# Author: Denis Zirnbauer\n`;
+  out += `# Author: D. Zirnbauer\n`;
   out += `# Version: ${APP_VERSION}\n`;
   out += `# Generiert: ${new Date().toLocaleString("de-DE")}\n`;
   out += `# Home Assistant ELTAKO YAML Export\n`;
@@ -423,8 +423,7 @@ function generateYaml(gateway, devices, extraGateways = [], pct14BaseId = "") {
 const GATEWAY_TYPES = [
   { value:"fam-usb",  label:"Eltako FAM-USB",  desc:"ESP2 · 9600 baud · Wireless", has_base_id:true, has_serial:true, has_lan:false, baud:9600, proto:"fam-usb-python" },
   { value:"fam14",    label:"Eltako FAM14",     desc:"Eltakobus · RS485 Bus · 57600 baud", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"fam14-python" },
-  { value:"fgw14usb", label:"Eltako FGW14-USB", desc:"ESP2 · RS485 Bus · 57600 baud", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"esp2" },
-  { value:"usb300",   label:"EnOcean USB300 (experimentell)", desc:"ESP3-Hardware · ESP2-Funktionsumfang · 57600 baud · Python EnOcean / esp2_gateway_adapter", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"usb300-python" },
+  { value:"fgw14usb", label:"Eltako FGW14-USB", desc:"ESP2 · RS485 Bus · 57600 baud", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"fgw14-python" },
 ];
 
 
@@ -837,49 +836,54 @@ export default function App() {
   };
 
   const handleDetectBaseId = async () => {
-    if (!isElectron) return;
-    setDetecting(true);
-    setDetectMsg("Verbinde mit Gateway...");
-    const gw = GATEWAY_TYPES.find(g => g.value === gateway.type);
-    const baud = gw?.baud || 57600;
-    const proto = gw?.proto || 'auto';
-    const result = await window.electronAPI.readBaseId(gateway.serial_path, baud, proto);
-    setDetecting(false);
-    if (result.ok) {
-      setGateway(g => ({ ...g, base_id: result.baseId, serial_path: result.portPath || g.serial_path }));
-      setDetectMsg(`✓ Base-ID erkannt: ${result.baseId} (${result.protocol || proto}, ${result.baudRate || baud} baud${result.bridge ? ", " + result.bridge : ""})`);
-    } else {
-      setDetectMsg("✗ " + result.error);
-    }
-    setTimeout(() => setDetectMsg(""), 8000);
-  };
+  if (!isElectron) return;
+  setDetecting(true);
+  setDetectMsg("Verbinde mit Gateway...");
+  const gw = GATEWAY_TYPES.find(g => g.value === gateway.type);
+  const baud = gw?.baud || 57600;
+  const proto = gw?.proto || "auto";
+  const result = await window.electronAPI.readBaseId(gateway.serial_path, baud, proto);
+  setDetecting(false);
+  if (result.ok && result.baseId) {
+    setGateway(g => ({ ...g, base_id: result.baseId, serial_path: result.portPath || g.serial_path }));
+    setDetectMsg(`✓ Base-ID erkannt: ${result.baseId} (${result.protocol || proto}, ${result.baudRate || baud} baud${result.bridge ? ", " + result.bridge : ""})`);
+  } else if (result.ok && (result.gatewayType === "fgw14usb" || result.detectedWithoutBaseId)) {
+    setGateway(g => ({ ...g, type:"fgw14usb", serial_path: result.portPath || g.serial_path }));
+    setDetectMsg(`✓ FGW14-USB erkannt auf ${result.portPath || gateway.serial_path}. Die Base-ID bitte aus PCT14 übernehmen oder manuell eintragen.`);
+  } else {
+    setDetectMsg("✗ " + result.error);
+  }
+  setTimeout(() => setDetectMsg(""), 12000);
+};
 
   const handleAutoDetectGateway = async () => {
-    if (!isElectron) return;
-    setDetecting(true);
-    setDetectMsg("Suche Gateway auf allen seriellen Ports...");
-    const result = await window.electronAPI.detectGateway(gateway.serial_path);
-    setDetecting(false);
+  if (!isElectron) return;
+  setDetecting(true);
+  setDetectMsg("Suche Gateway auf allen seriellen Ports...");
+  const result = await window.electronAPI.detectGateway(gateway.serial_path);
+  setDetecting(false);
 
-    if (result.ports) setPorts(result.ports);
+  if (result.ports) setPorts(result.ports);
 
-    if (result.ok) {
-      const gw = result.gateway;
-      setGateway(g => ({
-        ...g,
-        type: gw.type,
-        serial_path: gw.serial_path,
-        base_id: gw.base_id,
-      }));
-      setDetectMsg(`✓ Gateway erkannt: ${gw.label} auf ${gw.serial_path}, Base-ID ${gw.base_id} (${gw.protocol}, ${gw.baudRate} baud${result.bridge ? ", " + result.bridge : ""})`);
-    } else {
-      const tried = result.attempts?.length ? ` Getestete Varianten: ${result.attempts.length}.` : "";
-      setDetectMsg("✗ " + result.error + tried);
-    }
-    setTimeout(() => setDetectMsg(""), 12000);
-  };
-
-
+  if (result.ok) {
+    const gw = result.gateway;
+    setGateway(g => ({
+      ...g,
+      type: gw.type,
+      serial_path: gw.serial_path,
+      base_id: gw.base_id || g.base_id,
+    }));
+    const baseText = gw.base_id ? `, Base-ID ${gw.base_id}` : "";
+    const baseHint = gw.type === "fgw14usb" && !gw.base_id
+      ? " · Base-ID bitte aus PCT14 übernehmen oder manuell eintragen."
+      : "";
+    setDetectMsg(`✓ Gateway erkannt: ${gw.label} auf ${gw.serial_path}${baseText} (${gw.protocol}, ${gw.baudRate} baud${result.bridge ? ", " + result.bridge : ""})${baseHint}`);
+  } else {
+    const tried = result.attempts?.length ? ` Getestete Varianten: ${result.attempts.length}.` : "";
+    setDetectMsg("✗ " + result.error + tried);
+  }
+  setTimeout(() => setDetectMsg(""), 12000);
+};
 
   const handleDisconnectGateway = async () => {
     if (!isElectron) return;
@@ -1327,7 +1331,7 @@ export default function App() {
                   {disconnectingGateway ? "Trenne..." : "Disconnect / Bus freigeben"}
                 </button>
                 <div style={{fontSize:".68rem",color:"#64748b"}}>
-                  Testet erkannte Ports. FAM14 wird über Python/eltakobus erkannt; manuell eingetragener COM-Port wird zuerst getestet. Vor dem Abziehen oder Wechseln eines FAM14/FGW14-USB bitte Disconnect ausführen.
+                  Testet alle erkannten seriellen Ports. Ein manuell eingetragener COM-Port wird zuerst geprüft. Vor dem Abziehen oder Wechseln eines FAM14 oder FGW14-USB bitte „Disconnect / Bus freigeben“ ausführen.
                 </div>
               </div>
             )}
@@ -1369,12 +1373,12 @@ export default function App() {
                         <input value={gateway.base_id} onChange={e=>setGateway(g=>({...g,base_id:e.target.value}))} placeholder="FF-AA-80-00" style={{flex:"0 0 150px",minWidth:150}}/>
                         {isElectron&&(
                           <button className="btn ghost" style={{padding:".4rem .9rem",fontSize:".72rem",whiteSpace:"nowrap",minWidth:142}} onClick={handleDetectBaseId} disabled={detecting}>
-                            {detecting ? "Lese Base ID..." : "Base ID auslesen"}
+                            {detecting ? (gateway.type==="fgw14usb" ? "Prüfe Gateway..." : "Lese Base ID...") : (gateway.type==="fgw14usb" ? "Gateway prüfen" : "Base ID auslesen")}
                           </button>
                         )}
                       </div>
                       <div style={{fontSize:".62rem",color:"#6b7280",marginTop:".2rem"}}>
-                        {isElectron ? "Automatisch vom Gateway auslesen" : "Steht auf der Rückseite des Geräts"}
+                        {isElectron ? (gateway.type==="fgw14usb" ? "Gateway prüfen; Base-ID aus PCT14 übernehmen oder manuell eintragen" : "Automatisch vom Gateway auslesen") : "Steht auf der Rückseite des Geräts"}
                       </div>
                     </div>
                   )}
@@ -1676,7 +1680,7 @@ export default function App() {
 
         <div style={{marginTop:"1.2rem",fontSize:".68rem",color:"#8a96a3",lineHeight:1.55}}>
           <div>EEDTOY – ELTAKO EnOcean Device to YAML Generator</div>
-          <div>Privat entwickelt von Denis Zirnbauer · Kein offizielles Produkt der ELTAKO GmbH</div>
+          <div>Developed by D. Zirnbauer · Not an official product of ELTAKO GmbH</div>
         </div>
         </div>
       </main>

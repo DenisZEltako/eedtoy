@@ -1,8 +1,8 @@
 {
   "name": "eedtoy",
-  "version": "1.0.81",
+  "version": "1.0.82",
   "description": "EEDTOY - ELTAKO EnOcean Device to YAML Generator (privat entwickelt)",
-  "author": "Denis Zirnbauer",
+  "author": "D. Zirnbauer",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -97,7 +97,7 @@
     "serialport": "^12.0.0"
   },
   "productName": "EEDTOY",
-  "copyright": "Copyright © 2026 Denis Zirnbauer",
+  "copyright": "Copyright © 2026 D. Zirnbauer",
   "private": true,
   "license": "GPL-3.0-or-later"
 }

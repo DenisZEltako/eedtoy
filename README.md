@@ -12,9 +12,9 @@ Unter **Assets** die Datei `EEDTOY-Setup-<Version>.exe` herunterladen.
 
 ## Funktionen
 
-- FAM14-, FAM-USB-, FGW14-USB- und EnOcean-USB300-Unterstützung
-- automatische Gateway- und Base-ID-Erkennung
-- USB300 experimentell über Python EnOcean und `esp2_gateway_adapter` (ESP3-Hardware mit ESP2-Funktionsumfang)
+- Unterstützung für Eltako FAM-USB, FAM14 und FGW14-USB
+- automatische Gateway-Erkennung für die drei unterstützten ELTAKO-Gateways
+- Base-ID-Auslesen bei FAM-USB und FAM14; beim FGW14-USB aus PCT14 übernehmen oder manuell eintragen
 - PCT14/XML-Import
 - automatische Geräte-ID-Erkennung über EnOcean-Telegramme
 - verwaltete Sender-IDs und Kollisionsprüfung
@@ -68,17 +68,11 @@ py -3 -m pip install -r python/requirements.txt
 
 ## GitHub-Veröffentlichung
 
-Das Repository ist ohne `node_modules`, lokale Build-Ausgaben und ausführbare Dateien vorbereitet. Es enthält einen GitHub-Actions-Workflow unter `.github/workflows/build-windows.yml`.
+Das Repository enthält den GitHub-Actions-Workflow `.github/workflows/build-windows.yml`.
 
-- Pushes und Pull Requests prüfen den Windows-Build.
-- Ein Tag im Format `v1.0.80` baut den Installer und erstellt automatisch ein GitHub Release mit SHA-256-Prüfsumme.
-
-Beispiel:
-
-```powershell
-git tag v1.0.80
-git push origin v1.0.80
-```
+- Jeder Push auf `main` baut automatisch den Windows-Installer.
+- Installer und SHA-256-Prüfsumme stehen im erfolgreichen Workflow-Lauf unter **Artifacts** bereit.
+- GitHub Releases werden manuell erstellt und mit dem geprüften Installer ergänzt.
 
 ## Projektstruktur
 
@@ -99,7 +93,7 @@ Sicherheitsprobleme bitte über eine private GitHub Security Advisory melden. De
 
 ## Rechte und Marken
 
-Copyright © 2026 Denis Zirnbauer. Der Quellcode steht unter der Lizenz **GPL-3.0-or-later**. Siehe [LICENSE](LICENSE), [NOTICE.md](NOTICE.md) und [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Copyright © 2026 D. Zirnbauer. Der Quellcode steht unter der Lizenz **GPL-3.0-or-later**. Siehe [LICENSE](LICENSE), [NOTICE.md](NOTICE.md) und [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ELTAKO ist eine Marke der ELTAKO GmbH. Dieses Projekt ist weder mit der ELTAKO GmbH verbunden noch von ihr herausgegeben oder bestätigt.
 

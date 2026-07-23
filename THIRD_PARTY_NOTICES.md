@@ -21,7 +21,6 @@ Transitive Abhängigkeiten werden vollständig in `package-lock.json` dokumentie
 Die Gateway- und EnOcean-Funktionen verwenden beziehungsweise berücksichtigen insbesondere:
 
 - `eltako14bus`
-- `esp2-gateway-adapter`
 - `pyserial`
 - `PyYAML`
 - optional vorhandene eo-man-Komponenten beziehungsweise deren bekannte Installationspfade

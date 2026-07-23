@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.82
+
+- EnOcean USB300 vollständig aus Auswahl, Erkennung und Laufzeitabhängigkeiten entfernt, da aktuell kein praktischer Test möglich ist.
+- FGW14-USB-Erkennung an das Verfahren des EnOcean Device Managers angepasst: 57600 Baud und aktive RS485-Schnittstelle ohne Echo-Unterdrückung.
+- FGW14-USB kann ohne Base-ID-Antwort erkannt werden; die Base-ID wird aus PCT14 übernommen oder manuell eingetragen.
+- Gateway-Hinweis neutral formuliert und technische Implementierungsdetails aus der Oberfläche entfernt.
+- Footer auf „Developed by D. Zirnbauer · Not an official product of ELTAKO GmbH“ geändert.
+
 ## 1.0.81
 
 - Gateway-Auswahl auf Eltako FAM-USB, FAM14, FGW14-USB und EnOcean USB300 reduziert.
@@ -9,7 +17,7 @@
 
 ## 1.0.80
 
-- Publisher-, CompanyName- und Copyright-Metadaten auf Denis Zirnbauer gesetzt.
+- Publisher-, CompanyName- und Copyright-Metadaten auf D. Zirnbauer gesetzt.
 - App-ID auf `io.github.deniszeltako.eedtoy` geändert.
 - Hinweis ergänzt: privat entwickelt und kein offizielles Produkt der ELTAKO GmbH.
 - `publisherName` aus `build.win` entfernt, da electron-builder 26.15.3 diese Eigenschaft dort nicht mehr akzeptiert und der Installer nicht signiert wird.
@@ -20,8 +28,8 @@
 
 ## 1.0.80 – GitHub- und Metadaten-Bereinigung
 
-- Publisher und Windows-`CompanyName` auf `Denis Zirnbauer` geändert.
-- Copyright auf `Denis Zirnbauer` geändert.
+- Publisher und Windows-`CompanyName` auf `D. Zirnbauer` geändert.
+- Copyright auf `D. Zirnbauer` geändert.
 - App-ID auf `io.github.deniszeltako.eedtoy` geändert.
 - Klarer Hinweis ergänzt: privat entwickelt und kein offizielles Produkt der ELTAKO GmbH.
 - Programmtitel, ELTAKO-Gerätekompatibilität und bestehendes Icon unverändert beibehalten.

@@ -297,26 +297,6 @@ async function listSerialPortsRobust(extraPath = '') {
 }
 
 // ── CRC8 table for ESP3 ───────────────────────────────────────────
-const CRC8_TABLE = [
-  0x00,0x07,0x0e,0x09,0x1c,0x1b,0x12,0x15,0x38,0x3f,0x36,0x31,0x24,0x23,0x2a,0x2d,
-  0x70,0x77,0x7e,0x79,0x6c,0x6b,0x62,0x65,0x48,0x4f,0x46,0x41,0x54,0x53,0x5a,0x5d,
-  0xe0,0xe7,0xee,0xe9,0xfc,0xfb,0xf2,0xf5,0xd8,0xdf,0xd6,0xd1,0xc4,0xc3,0xca,0xcd,
-  0x90,0x97,0x9e,0x99,0x8c,0x8b,0x82,0x85,0xa8,0xaf,0xa6,0xa1,0xb4,0xb3,0xba,0xbd,
-  0xc7,0xc0,0xc9,0xce,0xdb,0xdc,0xd5,0xd2,0xff,0xf8,0xf1,0xf6,0xe3,0xe4,0xed,0xea,
-  0xb7,0xb0,0xb9,0xbe,0xab,0xac,0xa5,0xa2,0x8f,0x88,0x81,0x86,0x93,0x94,0x9d,0x9a,
-  0x27,0x20,0x29,0x2e,0x3b,0x3c,0x35,0x32,0x1f,0x18,0x11,0x16,0x03,0x04,0x0d,0x0a,
-  0x57,0x50,0x59,0x5e,0x4b,0x4c,0x45,0x42,0x6f,0x68,0x61,0x66,0x73,0x74,0x7d,0x7a,
-  0x89,0x8e,0x87,0x80,0x95,0x92,0x9b,0x9c,0xb1,0xb6,0xbf,0xb8,0xad,0xaa,0xa3,0xa4,
-  0xf9,0xfe,0xf7,0xf0,0xe5,0xe2,0xeb,0xec,0xc1,0xc6,0xcf,0xc8,0xdd,0xda,0xd3,0xd4,
-  0x69,0x6e,0x67,0x60,0x75,0x72,0x7b,0x7c,0x51,0x56,0x5f,0x58,0x4d,0x4a,0x43,0x44,
-  0x19,0x1e,0x17,0x10,0x05,0x02,0x0b,0x0c,0x21,0x26,0x2f,0x28,0x3d,0x3a,0x33,0x34,
-  0x4e,0x49,0x40,0x47,0x52,0x55,0x5c,0x5b,0x76,0x71,0x78,0x7f,0x6a,0x6d,0x64,0x63,
-  0x3e,0x39,0x30,0x37,0x22,0x25,0x2c,0x2b,0x06,0x01,0x08,0x0f,0x1a,0x1d,0x14,0x13,
-  0xae,0xa9,0xa0,0xa7,0xb2,0xb5,0xbc,0xbb,0x96,0x91,0x98,0x9f,0x8a,0x8d,0x84,0x83,
-  0xde,0xd9,0xd0,0xd7,0xc2,0xc5,0xcc,0xcb,0xe6,0xe1,0xe8,0xef,0xfa,0xfd,0xf4,0xf3
-];
-function crc8(data) { let c=0; for(const b of data) c=CRC8_TABLE[c^b]; return c; }
-
 // ── Helpers ───────────────────────────────────────────────────────
 function fmtId(buf) {
   return Array.from(buf).map(b=>b.toString(16).toUpperCase().padStart(2,'0')).join('-');
@@ -354,17 +334,7 @@ function buildFamUsbRdIdBase() {
   return Buffer.from([0xA5, 0x5A, lenByte, ...payload, cs]);
 }
 
-// ─────────────────────────────────────────────────────────────────
-// PROTOCOL 2: Standard ESP3 CO_RD_IDBASE (EnOcean USB300 fallback)
-// ─────────────────────────────────────────────────────────────────
-function buildEsp3RdIdBase() {
-  const header = Buffer.from([0x00, 0x01, 0x00, 0x05]);
-  const data   = Buffer.from([0x08]); // CO_RD_IDBASE
-  return Buffer.from([0x55, ...header, crc8(header), ...data, crc8(data)]);
-}
-
-// ─────────────────────────────────────────────────────────────────
-// PROTOCOL 3: Standard ESP2 CO_RD_IDBASE (FAM14, FGW14-USB)
+// PROTOCOL 2: Standard ESP2 CO_RD_IDBASE (FAM14, FGW14-USB)
 // ─────────────────────────────────────────────────────────────────
 function buildEsp2RdIdBase() {
   // ESP2 fixed frame. Body is 11 bytes; first byte is H_SEQ+LEN.
@@ -442,28 +412,6 @@ function tryParseEsp2(buf) {
   return null;
 }
 
-// Parse ESP3 CO_RD_IDBASE response
-// Response type=0x02, data[0]=0x00 (OK), data[1:5] = base ID
-function tryParseEsp3(buf) {
-  for (let i = 0; i < buf.length - 7; i++) {
-    if (buf[i] !== 0x55) continue;
-    if (buf.length < i + 6) continue;
-    const dataLen = (buf[i+1] << 8) | buf[i+2];
-    const optLen  = buf[i+3];
-    const type    = buf[i+4];
-    if (crc8(buf.slice(i+1, i+5)) !== buf[i+5]) continue;
-    const totalLen = 6 + dataLen + optLen + 1;
-    if (buf.length < i + totalLen) continue;
-    const dataStart = i + 6;
-    if (crc8(buf.slice(dataStart, dataStart + dataLen + optLen)) !== buf[i + totalLen - 1]) continue;
-    if (type === 0x02 && dataLen >= 5 && buf[dataStart] === 0x00) {
-      const id = buf.slice(dataStart + 1, dataStart + 5);
-      if (!allZero(id)) return fmtId(id);
-    }
-  }
-  return null;
-}
-
 // ─────────────────────────────────────────────────────────────────
 // SERIAL READ / AUTO DETECT HELPERS
 // ─────────────────────────────────────────────────────────────────
@@ -473,9 +421,6 @@ function parseBaseIdFromBuffer(buffer) {
 
   const fam = tryParseEltakoFamUsb(buffer);
   if (fam) return { baseId: fam, parser: 'eltako-fam-usb' };
-
-  const esp3 = tryParseEsp3(buffer);
-  if (esp3) return { baseId: esp3, parser: 'esp3' };
 
   const esp2 = tryParseEsp2(buffer);
   if (esp2) return { baseId: esp2, parser: 'esp2' };
@@ -487,7 +432,6 @@ function buildCommandForProtocol(protocol) {
   if (protocol === 'fam14-memory') return [buildEltakoBusLock(), buildFam14MemoryBaseIdRequest()];
   if (protocol === 'esp2-fam-usb') return buildFamUsbRdIdBase();
   if (protocol === 'esp2') return buildEsp2RdIdBase();
-  if (protocol === 'esp3') return buildEsp3RdIdBase();
   return null;
 }
 
@@ -593,7 +537,6 @@ function guessGatewayType(candidate) {
   if (candidate.protocol === 'fam14-memory') return 'fam14';
   if (candidate.protocol === 'esp2-fam-usb') return 'fam-usb';
   if (candidate.protocol === 'esp2') return candidate.baudRate === 57600 ? 'fgw14usb' : 'fam-usb';
-  if (candidate.protocol === 'esp3') return 'usb300';
   return 'fam-usb';
 }
 
@@ -616,15 +559,11 @@ function makeCandidatesForPort(portInfo) {
     add(9600, 'esp2-fam-usb', 'Eltako FAM-USB');
     add(57600, 'esp2', 'Eltako FAM14/FGW14-USB');
   }
-  if (m.includes('enocean') || m.includes('usb') || m.includes('serial') || m.includes('com')) {
-    add(57600, 'esp3', 'EnOcean USB300 (ESP3 -> ESP2 Adapter)');
-  }
 
   add(9600, 'fam14-memory', 'Eltako FAM14 Base-ID aus Speicher');
   add(57600, 'fam14-memory', 'Eltako FAM14 Base-ID aus Speicher');
   add(9600, 'esp2-fam-usb', 'Eltako FAM-USB');
   add(57600, 'esp2', 'Eltako FAM14/FGW14-USB');
-  add(57600, 'esp3', 'EnOcean USB300 (ESP3 -> ESP2 Adapter)');
   add(9600, 'esp2', 'ESP2 9600 fallback');
 
   const seen = new Set();
@@ -808,7 +747,7 @@ async function tryInstallPythonWithWinget() {
 }
 
 async function validatePythonRuntime(pythonCmd, argsPrefix = []) {
-  const code = 'import serial, yaml, eltakobus, esp2_gateway_adapter; print("ok")';
+  const code = 'import serial, yaml, eltakobus; print("ok")';
   const r = await runProcess(pythonCmd, [...argsPrefix, '-c', code], { timeoutMs: 15000 });
   return { ok: r.ok && String(r.stdout || '').includes('ok'), details: r };
 }
@@ -1377,33 +1316,52 @@ ipcMain.handle('learn-device-id', async (_, portPath, gatewayType, timeoutMs) =>
 });
 
 ipcMain.handle('read-base-id', async (_, portPath, baudRate, protocol) => {
-  const proto = protocol || 'esp3';
+  const proto = protocol || 'esp2';
 
-  // FAM14 Base-ID reading is Eltako-bus-specific. Prefer the Python bridge that
-  // uses eltakobus, the same stack used by the EnOcean Device Manager.
-  if (proto === 'fam14-python' || proto === 'eltakobus-fam14' || proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb' || proto === 'usb300-python') {
+  if (proto === 'fam14-python' || proto === 'eltakobus-fam14' || proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb' || proto === 'fgw14-python') {
     const isFamUsb = proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb';
-    const isUsb300 = proto === 'usb300-python';
-    const detectorMode = isUsb300 ? 'esp3' : (isFamUsb ? 'fam-usb' : 'fam14');
-    const gatewayType = isUsb300 ? 'usb300' : (isFamUsb ? 'fam-usb' : 'fam14');
+    const isFgw14 = proto === 'fgw14-python';
+    const detectorMode = isFgw14 ? 'fgw14' : (isFamUsb ? 'fam-usb' : 'fam14');
+    const expectedType = isFgw14 ? 'fgw14usb' : (isFamUsb ? 'fam-usb' : 'fam14');
     const py = await runPythonDetector(portPath || '', detectorMode);
-    if (py.ok && py.gateway?.base_id) {
-      rememberBusConnection(py.gateway.serial_path || portPath, gatewayType, py.gateway.baudRate || 57600);
-      return {
-        ok: true,
-        baseId: py.gateway.base_id,
-        protocol: py.gateway.protocol,
-        parser: py.gateway.parser,
-        baudRate: py.gateway.baudRate,
-        portPath: py.gateway.serial_path,
-        bridge: 'python',
-      };
+
+    if (py.ok && py.gateway) {
+      const detectedType = py.gateway.type || expectedType;
+      rememberBusConnection(py.gateway.serial_path || portPath, detectedType, py.gateway.baudRate || 57600);
+
+      if (py.gateway.base_id) {
+        return {
+          ok: true,
+          baseId: py.gateway.base_id,
+          gatewayType: detectedType,
+          protocol: py.gateway.protocol,
+          parser: py.gateway.parser,
+          baudRate: py.gateway.baudRate,
+          portPath: py.gateway.serial_path,
+          bridge: 'python',
+        };
+      }
+
+      if (detectedType === 'fgw14usb') {
+        return {
+          ok: true,
+          baseId: '',
+          gatewayType: 'fgw14usb',
+          detectedWithoutBaseId: true,
+          protocol: py.gateway.protocol,
+          parser: py.gateway.parser,
+          baudRate: py.gateway.baudRate,
+          portPath: py.gateway.serial_path,
+          bridge: 'python',
+        };
+      }
     }
+
     return {
       ok: false,
-      error: py.error || (isUsb300
-        ? 'Python-USB300-Erkennung ueber esp2_gateway_adapter lieferte keine Base-ID'
-        : (isFamUsb ? 'Python-FAM-USB-Erkennung lieferte keine Base-ID' : 'Python-FAM14-Erkennung lieferte keine Base-ID')),
+      error: py.error || (isFgw14
+        ? 'FGW14-USB konnte auf dem angegebenen Port nicht erkannt werden.'
+        : (isFamUsb ? 'FAM-USB-Erkennung lieferte keine Base-ID.' : 'FAM14-Erkennung lieferte keine Base-ID.')),
       attempts: py.attempts || [],
       bridge: 'python',
     };
@@ -1413,7 +1371,10 @@ ipcMain.handle('read-base-id', async (_, portPath, baudRate, protocol) => {
   if (result.ok) return result;
   return {
     ok: false,
-    error: `${result.error}\nPort: ${portPath}\nBaudrate: ${baudRate || 57600}\nProtokoll: ${proto}`,
+    error: `${result.error}
+Port: ${portPath}
+Baudrate: ${baudRate || 57600}
+Protokoll: ${proto}`,
     txFrames: result.txFrames || [],
     rxFrames: result.rxFrames || [],
   };

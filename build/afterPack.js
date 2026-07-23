@@ -27,12 +27,12 @@ function runRceditExe(rceditExe, exePath, iconPath, version) {
     '--set-icon', iconPath,
     '--set-file-version', version,
     '--set-product-version', version,
-    '--set-version-string', 'CompanyName', 'Denis Zirnbauer',
+    '--set-version-string', 'CompanyName', 'D. Zirnbauer',
     '--set-version-string', 'FileDescription', 'EEDTOY - ELTAKO EnOcean Device to YAML Generator',
     '--set-version-string', 'ProductName', 'EEDTOY',
     '--set-version-string', 'InternalName', 'EEDTOY',
     '--set-version-string', 'OriginalFilename', 'EEDTOY.exe',
-    '--set-version-string', 'LegalCopyright', 'Copyright (C) 2026 Denis Zirnbauer'
+    '--set-version-string', 'LegalCopyright', 'Copyright (C) 2026 D. Zirnbauer'
   ];
 
   const result = spawnSync(rceditExe, args, { stdio: 'inherit', shell: false });
@@ -65,12 +65,12 @@ module.exports = async function afterPack(context) {
         'file-version': version,
         'product-version': version,
         'version-string': {
-          CompanyName: 'Denis Zirnbauer',
+          CompanyName: 'D. Zirnbauer',
           FileDescription: 'EEDTOY - ELTAKO EnOcean Device to YAML Generator',
           ProductName: 'EEDTOY',
           InternalName: 'EEDTOY',
           OriginalFilename: 'EEDTOY.exe',
-          LegalCopyright: 'Copyright (C) 2026 Denis Zirnbauer'
+          LegalCopyright: 'Copyright (C) 2026 D. Zirnbauer'
         }
       });
       console.log(`[afterPack] Windows EXE Ressourcen gepatcht via rcedit API: ${exePath}`);
