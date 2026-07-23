@@ -1,0 +1,594 @@
+name: Prepare EEDTOY v1.0.82
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/prepare-v1.0.82.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: EEDTOY v1.0.82 vorbereiten
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+          import subprocess
+
+          ROOT = Path('.')
+
+          def read(path):
+              return (ROOT / path).read_text(encoding='utf-8')
+
+          def write(path, text):
+              (ROOT / path).write_text(text, encoding='utf-8', newline='\n')
+              print(f'updated {path}')
+
+          def replace_required(text, old, new, label, count=1):
+              found = text.count(old)
+              if found < count:
+                  raise SystemExit(f'Muster nicht gefunden ({label}); erwartet mindestens {count}, gefunden {found}')
+              return text.replace(old, new, count)
+
+          def sub_required(text, pattern, replacement, label, count=1, flags=0):
+              result, found = re.subn(pattern, replacement, text, count=count, flags=flags)
+              if found != count:
+                  raise SystemExit(f'RegEx-Muster nicht eindeutig ({label}); erwartet {count}, gefunden {found}')
+              return result
+
+          # ------------------------------------------------------------------
+          # React UI
+          # ------------------------------------------------------------------
+          path = 'src/App.jsx'
+          text = read(path)
+          text = sub_required(
+              text,
+              r'const APP_VERSION = "[^"]+";',
+              'const APP_VERSION = "1.0.82";',
+              'APP_VERSION',
+          )
+          text = sub_required(
+              text,
+              r'\n\s*\{ value:"usb300"[^\n]*\},',
+              '',
+              'USB300 Gateway-Kachel',
+          )
+          text = sub_required(
+              text,
+              r'(\{ value:"fgw14usb"[^\n]*?proto:)"esp2"(\s*\},)',
+              r'\1"fgw14-python"\2',
+              'FGW14-USB Python-Protokoll',
+          )
+
+          old_base_handler = '''    const result = await window.electronAPI.readBaseId(gateway.serial_path, baud, proto);
+              setDetecting(false);
+              if (result.ok) {
+                setGateway(g => ({ ...g, base_id: result.baseId, serial_path: result.portPath || g.serial_path }));
+                setDetectMsg(`✓ Base-ID erkannt: ${result.baseId} (${result.protocol || proto}, ${result.baudRate || baud} baud${result.bridge ? ", " + result.bridge : ""})`);
+              } else {
+                setDetectMsg("✗ " + result.error);
+              }
+              setTimeout(() => setDetectMsg(""), 8000);'''
+          new_base_handler = '''    const result = await window.electronAPI.readBaseId(gateway.serial_path, baud, proto);
+              setDetecting(false);
+              if (result.ok && result.baseId) {
+                setGateway(g => ({ ...g, base_id: result.baseId, serial_path: result.portPath || g.serial_path }));
+                setDetectMsg(`✓ Base-ID erkannt: ${result.baseId} (${result.protocol || proto}, ${result.baudRate || baud} baud${result.bridge ? ", " + result.bridge : ""})`);
+              } else if (result.ok && (result.gatewayType === "fgw14usb" || result.detectedWithoutBaseId)) {
+                setGateway(g => ({ ...g, type:"fgw14usb", serial_path: result.portPath || g.serial_path }));
+                setDetectMsg(`✓ FGW14-USB erkannt auf ${result.portPath || gateway.serial_path}. Die Base-ID bitte aus PCT14 übernehmen oder manuell eintragen.`);
+              } else {
+                setDetectMsg("✗ " + result.error);
+              }
+              setTimeout(() => setDetectMsg(""), 12000);'''
+          text = replace_required(text, old_base_handler, new_base_handler, 'Base-ID Handler')
+
+          old_auto_success = '''    if (result.ok) {
+              const gw = result.gateway;
+              setGateway(g => ({
+                ...g,
+                type: gw.type,
+                serial_path: gw.serial_path,
+                base_id: gw.base_id,
+              }));
+              setDetectMsg(`✓ Gateway erkannt: ${gw.label} auf ${gw.serial_path}, Base-ID ${gw.base_id} (${gw.protocol}, ${gw.baudRate} baud${result.bridge ? ", " + result.bridge : ""})`);
+            } else {'''
+          new_auto_success = '''    if (result.ok) {
+              const gw = result.gateway;
+              setGateway(g => ({
+                ...g,
+                type: gw.type,
+                serial_path: gw.serial_path,
+                base_id: gw.base_id || g.base_id,
+              }));
+              const baseText = gw.base_id ? `, Base-ID ${gw.base_id}` : "";
+              const baseHint = gw.type === "fgw14usb" && !gw.base_id
+                ? " · Base-ID bitte aus PCT14 übernehmen oder manuell eintragen."
+                : "";
+              setDetectMsg(`✓ Gateway erkannt: ${gw.label} auf ${gw.serial_path}${baseText} (${gw.protocol}, ${gw.baudRate} baud${result.bridge ? ", " + result.bridge : ""})${baseHint}`);
+            } else {'''
+          text = replace_required(text, old_auto_success, new_auto_success, 'Auto-Detect Erfolgsanzeige')
+
+          text = replace_required(
+              text,
+              'Testet erkannte Ports. FAM14 wird über Python/eltakobus erkannt; manuell eingetragener COM-Port wird zuerst getestet. Vor dem Abziehen oder Wechseln eines FAM14/FGW14-USB bitte Disconnect ausführen.',
+              'Testet alle erkannten seriellen Ports. Ein manuell eingetragener COM-Port wird zuerst geprüft. Vor dem Abziehen oder Wechseln eines FAM14 oder FGW14-USB bitte „Disconnect / Bus freigeben“ ausführen.',
+              'Gateway-Hinweis',
+          )
+          text = replace_required(
+              text,
+              '{detecting ? "Lese Base ID..." : "Base ID auslesen"}',
+              '{detecting ? (gateway.type==="fgw14usb" ? "Prüfe Gateway..." : "Lese Base ID...") : (gateway.type==="fgw14usb" ? "Gateway prüfen" : "Base ID auslesen")}',
+              'FGW14 Button-Beschriftung',
+          )
+          text = replace_required(
+              text,
+              '{isElectron ? "Automatisch vom Gateway auslesen" : "Steht auf der Rückseite des Geräts"}',
+              '{isElectron ? (gateway.type==="fgw14usb" ? "Gateway prüfen; Base-ID aus PCT14 übernehmen oder manuell eintragen" : "Automatisch vom Gateway auslesen") : "Steht auf der Rückseite des Geräts"}',
+              'FGW14 Base-ID Hinweis',
+          )
+          text = replace_required(
+              text,
+              '<div>Privat entwickelt von Denis Zirnbauer · Kein offizielles Produkt der ELTAKO GmbH</div>',
+              '<div>Developed by D. Zirnbauer · Not an official product of ELTAKO GmbH</div>',
+              'Footer',
+          )
+          write(path, text)
+
+          # ------------------------------------------------------------------
+          # Electron main process: USB300 entfernen, FGW14-USB via Grimm-Logik
+          # ------------------------------------------------------------------
+          path = 'electron/main.js'
+          text = read(path)
+          text = sub_required(
+              text,
+              r'^const CRC8_TABLE = \[.*?^function crc8\(data\) \{[^\n]*\}\n\n',
+              '',
+              'ESP3 CRC-Code',
+              flags=re.MULTILINE | re.DOTALL,
+          )
+          text = sub_required(
+              text,
+              r'\n// ─+\n// PROTOCOL 2: Standard ESP3 CO_RD_IDBASE.*?\nfunction buildEsp3RdIdBase\(\) \{.*?\n\}\n',
+              '\n',
+              'ESP3 Base-ID Builder',
+              flags=re.DOTALL,
+          )
+          text = text.replace('// PROTOCOL 3: Standard ESP2 CO_RD_IDBASE (FAM14, FGW14-USB)', '// PROTOCOL 2: Standard ESP2 CO_RD_IDBASE (FAM14, FGW14-USB)')
+          text = sub_required(
+              text,
+              r'\n// Parse ESP3 CO_RD_IDBASE response.*?\nfunction tryParseEsp3\(buf\) \{.*?\n\}\n',
+              '\n',
+              'ESP3 Parser',
+              flags=re.DOTALL,
+          )
+          text = replace_required(
+              text,
+              '''  const esp3 = tryParseEsp3(buffer);
+              if (esp3) return { baseId: esp3, parser: 'esp3' };
+
+          ''',
+              '',
+              'ESP3 parseBaseId Aufruf',
+          )
+          text = replace_required(text, "  if (protocol === 'esp3') return buildEsp3RdIdBase();\n", '', 'ESP3 Protokollkommando')
+          text = replace_required(text, "  if (candidate.protocol === 'esp3') return 'usb300';\n", '', 'USB300 Typzuordnung')
+          text = sub_required(
+              text,
+              r"\n  if \(m\.includes\('enocean'\) \|\| m\.includes\('usb'\) \|\| m\.includes\('serial'\) \|\| m\.includes\('com'\)\) \{\n    add\(57600, 'esp3', 'EnOcean USB300 \(ESP3 -> ESP2 Adapter\)'\);\n  \}\n",
+              '\n',
+              'USB300 Kandidatenblock',
+          )
+          text = replace_required(text, "  add(57600, 'esp3', 'EnOcean USB300 (ESP3 -> ESP2 Adapter)');\n", '', 'USB300 Fallback-Kandidat')
+          text = replace_required(text, "  const proto = protocol || 'esp3';", "  const proto = protocol || 'esp2';", 'Standardprotokoll')
+
+          old_python_block = '''  // FAM14 Base-ID reading is Eltako-bus-specific. Prefer the Python bridge that
+            // uses eltakobus, the same stack used by the EnOcean Device Manager.
+            if (proto === 'fam14-python' || proto === 'eltakobus-fam14' || proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb' || proto === 'usb300-python') {
+              const isFamUsb = proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb';
+              const isUsb300 = proto === 'usb300-python';
+              const detectorMode = isUsb300 ? 'esp3' : (isFamUsb ? 'fam-usb' : 'fam14');
+              const gatewayType = isUsb300 ? 'usb300' : (isFamUsb ? 'fam-usb' : 'fam14');
+              const py = await runPythonDetector(portPath || '', detectorMode);
+              if (py.ok && py.gateway?.base_id) {
+                rememberBusConnection(py.gateway.serial_path || portPath, gatewayType, py.gateway.baudRate || 57600);
+                return {
+                  ok: true,
+                  baseId: py.gateway.base_id,
+                  protocol: py.gateway.protocol,
+                  parser: py.gateway.parser,
+                  baudRate: py.gateway.baudRate,
+                  portPath: py.gateway.serial_path,
+                  bridge: 'python',
+                };
+              }
+              return {
+                ok: false,
+                error: py.error || (isUsb300
+                  ? 'Python-USB300-Erkennung ueber esp2_gateway_adapter lieferte keine Base-ID'
+                  : (isFamUsb ? 'Python-FAM-USB-Erkennung lieferte keine Base-ID' : 'Python-FAM14-Erkennung lieferte keine Base-ID')),
+                attempts: py.attempts || [],
+                bridge: 'python',
+              };
+            }'''
+          new_python_block = '''  // ELTAKO-Gateways werden über die gleiche RS485-Erkennung wie im EnOcean Device Manager geprüft.
+            if (proto === 'fam14-python' || proto === 'eltakobus-fam14' || proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb' || proto === 'fgw14-python') {
+              const isFamUsb = proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb';
+              const isFgw14 = proto === 'fgw14-python';
+              const detectorMode = isFgw14 ? 'fgw14' : (isFamUsb ? 'fam-usb' : 'fam14');
+              const gatewayType = isFgw14 ? 'fgw14usb' : (isFamUsb ? 'fam-usb' : 'fam14');
+              const py = await runPythonDetector(portPath || '', detectorMode);
+              if (py.ok && py.gateway) {
+                rememberBusConnection(py.gateway.serial_path || portPath, py.gateway.type || gatewayType, py.gateway.baudRate || 57600);
+                if (py.gateway.base_id) {
+                  return {
+                    ok: true,
+                    baseId: py.gateway.base_id,
+                    gatewayType: py.gateway.type || gatewayType,
+                    protocol: py.gateway.protocol,
+                    parser: py.gateway.parser,
+                    baudRate: py.gateway.baudRate,
+                    portPath: py.gateway.serial_path,
+                    bridge: 'python',
+                  };
+                }
+                if ((py.gateway.type || gatewayType) === 'fgw14usb') {
+                  return {
+                    ok: true,
+                    baseId: '',
+                    gatewayType: 'fgw14usb',
+                    detectedWithoutBaseId: true,
+                    protocol: py.gateway.protocol,
+                    parser: py.gateway.parser,
+                    baudRate: py.gateway.baudRate,
+                    portPath: py.gateway.serial_path,
+                    bridge: 'python',
+                  };
+                }
+              }
+              return {
+                ok: false,
+                error: py.error || (isFgw14
+                  ? 'FGW14-USB konnte auf dem angegebenen Port nicht erkannt werden.'
+                  : (isFamUsb ? 'Python-FAM-USB-Erkennung lieferte keine Base-ID' : 'Python-FAM14-Erkennung lieferte keine Base-ID')),
+                attempts: py.attempts || [],
+                bridge: 'python',
+              };
+            }'''
+          text = replace_required(text, old_python_block, new_python_block, 'Python read-base-id Block')
+          text = replace_required(
+              text,
+              '// Preferred path: Python detector with Philipp-Grimm/eltakobus-style FAM14/FAM-USB logic.',
+              '// Preferred path: serial detector using the FAM14/FAM-USB/FGW14-USB logic from the EnOcean Device Manager.',
+              'Detector-Kommentar',
+          )
+          text = replace_required(
+              text,
+              "const code = 'import serial, yaml, eltakobus, esp2_gateway_adapter; print(\"ok\")';",
+              "const code = 'import serial, yaml, eltakobus; print(\"ok\")';",
+              'Python Runtime Validierung',
+          )
+          write(path, text)
+
+          # ------------------------------------------------------------------
+          # Python Gateway detector
+          # ------------------------------------------------------------------
+          path = 'python/detect_gateway.py'
+          text = read(path)
+          text = replace_required(text, 'delay_message = 0.001 if baud_rate == 57600 else 0.2', 'delay_message = 0.2', 'RS485 delay_message')
+          old_fgw = '''        # At 57600 without echo suppression this is a possible FGW14-USB, but the
+                  # reference code only classifies it as possible; it does not prove Base-ID.
+                  if baud_rate == 57600:
+                      return {
+                          "ok": False,
+                          "possible_gateway": {
+                              "type": "fgw14usb",
+                              "label": "Eltako FGW14-USB möglich",
+                              "serial_path": port_path,
+                              "baudRate": baud_rate,
+                              "protocol": "eltakobus-rs485-no-suppress-echo",
+                          },
+                          "error": "FGW14-USB möglich, aber keine Base-ID Antwort gelesen",
+                      }'''
+          new_fgw = '''        # Grimm/EnOcean Device Manager: 57600 baud plus active RS485 interface
+                  # without echo suppression is classified as FGW14-USB. The FGW14-USB
+                  # does not provide a Base-ID through this detection path.
+                  if baud_rate == 57600:
+                      gateway = {
+                          "type": "fgw14usb",
+                          "label": "Eltako FGW14-USB",
+                          "serial_path": port_path,
+                          "baudRate": baud_rate,
+                          "protocol": "eltakobus-rs485-no-suppress-echo",
+                          "parser": "python-eltakobus-rs485-no-suppress-echo",
+                          "base_id": "",
+                      }
+                      if target in ("auto", "fgw14", "rs485"):
+                          return {"ok": True, "gateway": gateway}
+                      return {
+                          "ok": False,
+                          "possible_gateway": gateway,
+                          "error": "Port verhält sich wie FGW14-USB (kein suppress_echo), nicht wie FAM14.",
+                      }'''
+          text = replace_required(text, old_fgw, new_fgw, 'FGW14 Erkennung')
+          text = sub_required(
+              text,
+              r'\nasync def try_esp3_port\(port_path: str\) -> Dict\[str, Any\]:.*?\n\nasync def detect\(',
+              '\n\nasync def detect(',
+              'USB300 Python-Detector',
+              flags=re.DOTALL,
+          )
+          text = replace_required(
+              text,
+              'candidates.extend([("rs485", 9600, "auto"), ("rs485", 57600, "auto"), ("esp3", 57600, "auto")])',
+              'candidates.extend([("rs485", 9600, "auto"), ("rs485", 57600, "auto")])',
+              'Auto-Kandidaten',
+          )
+          text = replace_required(
+              text,
+              '''        elif mode == "rs485":
+                      candidates.extend([("rs485", 9600, "rs485"), ("rs485", 57600, "rs485")])
+                  elif mode == "esp3":
+                      candidates.append(("esp3", 57600, "esp3"))''',
+              '''        elif mode == "fgw14":
+                      candidates.append(("rs485", 57600, "fgw14"))
+                  elif mode == "rs485":
+                      candidates.extend([("rs485", 9600, "rs485"), ("rs485", 57600, "rs485")])''',
+              'Detector-Modi',
+          )
+          text = replace_required(
+              text,
+              '''        for proto, baud, target in candidates:
+                      if proto == "rs485":
+                          result = await try_rs485_port(port_path, baud, target)
+                      else:
+                          result = await try_esp3_port(port_path)''',
+              '''        for proto, baud, target in candidates:
+                      result = await try_rs485_port(port_path, baud, target)''',
+              'Detector-Aufruf',
+          )
+          text = replace_required(
+              text,
+              'choices=["auto", "fam14", "fam-usb", "rs485", "esp3"]',
+              'choices=["auto", "fam14", "fam-usb", "fgw14", "rs485"]',
+              'CLI-Modi',
+          )
+          text = replace_required(
+              text,
+              'Ports wurden getestet, aber keine Base-ID konnte gelesen werden. Falls FAM14 angeschlossen ist: prüfen, ob der Bus frei ist und keine andere Software den COM-Port belegt.',
+              'Ports wurden getestet, aber kein unterstütztes ELTAKO-Gateway erkannt. Prüfe COM-Port, Baudrate und ob PCT14 oder eine andere Software den Port belegt.',
+              'Detector-Fehlermeldung',
+          )
+          write(path, text)
+
+          # ------------------------------------------------------------------
+          # Python learn listener: USB300 entfernen
+          # ------------------------------------------------------------------
+          path = 'python/learn_device_id.py'
+          text = read(path)
+          text = sub_required(
+              text,
+              r'\n\ndef listen_usb300\(port: str, timeout: float\) -> dict:.*?\n\ndef main\(\) -> int:',
+              '\n\ndef main() -> int:',
+              'USB300 Lerntelegramm-Listener',
+              flags=re.DOTALL,
+          )
+          text = replace_required(
+              text,
+              '''    elif mode in ("fam-usb", "famusb"):
+                  mode = "fam-usb"
+              elif mode in ("usb300", "esp3"):
+                  mode = "usb300"
+
+              try:
+                  result = listen_usb300(args.port, args.timeout) if mode == "usb300" else listen_rs485(args.port, mode, args.timeout)''',
+              '''    elif mode in ("fam-usb", "famusb"):
+                  mode = "fam-usb"
+
+              try:
+                  result = listen_rs485(args.port, mode, args.timeout)''',
+              'USB300 Listener-Dispatch',
+          )
+          write(path, text)
+
+          # ------------------------------------------------------------------
+          # Python dependencies and notices
+          # ------------------------------------------------------------------
+          path = 'python/requirements.txt'
+          text = read(path)
+          text = sub_required(text, r'^esp2-gateway-adapter\s*\n', '', 'esp2-gateway-adapter dependency', flags=re.MULTILINE)
+          write(path, text)
+
+          path = 'THIRD_PARTY_NOTICES.md'
+          text = read(path)
+          text = sub_required(text, r'^- `esp2-gateway-adapter`\s*\n', '', 'esp2-gateway-adapter notice', flags=re.MULTILINE)
+          write(path, text)
+
+          # ------------------------------------------------------------------
+          # Package versions
+          # ------------------------------------------------------------------
+          path = 'package.json'
+          package = json.loads(read(path))
+          package['version'] = '1.0.82'
+          write(path, json.dumps(package, ensure_ascii=False, indent=2) + '\n')
+
+          path = 'package-lock.json'
+          text = read(path)
+          occurrences = text.count('"version": "1.0.81"')
+          if occurrences < 2:
+              raise SystemExit(f'package-lock version occurrences: {occurrences}')
+          text = text.replace('"version": "1.0.81"', '"version": "1.0.82"', 2)
+          write(path, text)
+
+          # ------------------------------------------------------------------
+          # README and changelog
+          # ------------------------------------------------------------------
+          path = 'README.md'
+          text = read(path)
+          text = replace_required(
+              text,
+              '''- FAM14-, FAM-USB-, FGW14-USB- und EnOcean-USB300-Unterstützung
+              - automatische Gateway- und Base-ID-Erkennung
+              - USB300 experimentell über Python EnOcean und `esp2_gateway_adapter` (ESP3-Hardware mit ESP2-Funktionsumfang)''',
+              '''- Unterstützung für Eltako FAM-USB, FAM14 und FGW14-USB
+              - automatische Gateway-Erkennung für die drei unterstützten ELTAKO-Gateways
+              - Base-ID-Auslesen bei FAM-USB und FAM14; beim FGW14-USB aus PCT14 übernehmen oder manuell eintragen''',
+              'README Gateway-Funktionen',
+          )
+          text = sub_required(
+              text,
+              r'## GitHub-Veröffentlichung\n.*?\n## Projektstruktur',
+              '''## GitHub-Veröffentlichung
+
+              Das Repository enthält den GitHub-Actions-Workflow `.github/workflows/build-windows.yml`.
+
+              - Jeder Push auf `main` baut automatisch den Windows-Installer.
+              - Der Installer und die SHA-256-Prüfsumme stehen anschließend im erfolgreichen Workflow-Lauf unter **Artifacts** bereit.
+              - GitHub Releases werden bewusst manuell erstellt und mit dem geprüften Installer ergänzt.
+
+              ## Projektstruktur''',
+              'README Veröffentlichungsablauf',
+              flags=re.DOTALL,
+          )
+          write(path, text)
+
+          path = 'CHANGELOG.md'
+          text = read(path)
+          entry = '''## 1.0.82
+
+          - EnOcean USB300 vollständig aus Auswahl, Erkennung und Laufzeitabhängigkeiten entfernt, da aktuell kein praktischer Test möglich ist.
+          - FGW14-USB-Erkennung an das Verfahren des EnOcean Device Managers angepasst: 57600 Baud und aktive RS485-Schnittstelle ohne Echo-Unterdrückung.
+          - FGW14-USB kann nun ohne Base-ID-Antwort als Gateway erkannt werden; die Base-ID wird aus PCT14 übernommen oder manuell eingetragen.
+          - Gateway-Hinweis neutral formuliert und technische Implementierungsdetails aus der Oberfläche entfernt.
+          - Footer auf „Developed by D. Zirnbauer · Not an official product of ELTAKO GmbH“ geändert.
+
+          '''
+          text = replace_required(text, '# Changelog\n\n', '# Changelog\n\n' + entry, 'Changelog Header')
+          write(path, text)
+
+          # ------------------------------------------------------------------
+          # Vollständigen Namen in sichtbaren Quellen und Metadaten kürzen
+          # ------------------------------------------------------------------
+          tracked = subprocess.check_output(['git', 'ls-files', '-z']).decode('utf-8').split('\0')
+          text_suffixes = {'.js', '.jsx', '.json', '.md', '.py', '.yml', '.yaml', '.txt', '.nsh', '.cmd', '.ps1'}
+          for item in tracked:
+              if not item or item == '.github/workflows/prepare-v1.0.82.yml':
+                  continue
+              file_path = ROOT / item
+              if not file_path.is_file() or file_path.suffix.lower() not in text_suffixes:
+                  continue
+              try:
+                  current = file_path.read_text(encoding='utf-8')
+              except UnicodeDecodeError:
+                  continue
+              updated = current.replace('Denis Zirnbauer', 'D. Zirnbauer')
+              if updated != current:
+                  file_path.write_text(updated, encoding='utf-8', newline='\n')
+                  print(f'updated author metadata in {item}')
+
+          # ------------------------------------------------------------------
+          # Validation
+          # ------------------------------------------------------------------
+          app = read('src/App.jsx')
+          main = read('electron/main.js')
+          detector = read('python/detect_gateway.py')
+          learner = read('python/learn_device_id.py')
+          requirements = read('python/requirements.txt')
+          readme = read('README.md')
+          notices = read('THIRD_PARTY_NOTICES.md')
+
+          current_support_files = {
+              'src/App.jsx': app,
+              'electron/main.js': main,
+              'python/detect_gateway.py': detector,
+              'python/learn_device_id.py': learner,
+              'python/requirements.txt': requirements,
+              'README.md': readme,
+              'THIRD_PARTY_NOTICES.md': notices,
+          }
+          for filename, current in current_support_files.items():
+              if 'USB300' in current or 'usb300' in current or 'esp2_gateway_adapter' in current or 'esp2-gateway-adapter' in current:
+                  raise SystemExit(f'USB300/Adapter ist noch in {filename} enthalten')
+
+          gateway_block = re.search(r'const GATEWAY_TYPES = \[(.*?)\n\];', app, re.DOTALL)
+          if not gateway_block:
+              raise SystemExit('GATEWAY_TYPES Block fehlt')
+          gateway_values = re.findall(r'value:"([^"]+)"', gateway_block.group(1))
+          if gateway_values != ['fam-usb', 'fam14', 'fgw14usb']:
+              raise SystemExit(f'Unerwartete Gateway-Liste: {gateway_values}')
+          if 'proto:"fgw14-python"' not in gateway_block.group(1):
+              raise SystemExit('FGW14-USB nutzt nicht fgw14-python')
+          if 'Developed by D. Zirnbauer · Not an official product of ELTAKO GmbH' not in app:
+              raise SystemExit('Neuer Footer fehlt')
+          if 'Testet alle erkannten seriellen Ports.' not in app:
+              raise SystemExit('Neuer Gateway-Hinweis fehlt')
+
+          for item in subprocess.check_output(['git', 'ls-files', '-z']).decode('utf-8').split('\0'):
+              if not item:
+                  continue
+              file_path = ROOT / item
+              if not file_path.is_file() or file_path.suffix.lower() not in text_suffixes:
+                  continue
+              try:
+                  current = file_path.read_text(encoding='utf-8')
+              except UnicodeDecodeError:
+                  continue
+              if 'Denis Zirnbauer' in current:
+                  raise SystemExit(f'Vollständiger Name noch enthalten: {item}')
+
+          json.loads(read('package.json'))
+          json.loads(read('package-lock.json'))
+          print('Source validation passed')
+          PY
+
+      - name: Python- und JavaScript-Syntax prüfen
+        shell: bash
+        run: |
+          python -m py_compile python/detect_gateway.py python/learn_device_id.py
+          node --check electron/main.js
+          git diff --check
+
+      - name: Frontend-Abhängigkeiten installieren
+        shell: bash
+        run: |
+          npm config set registry https://registry.npmjs.org/
+          npm ci --include=dev --no-audit --no-fund
+
+      - name: Frontend bauen
+        run: npm run build
+
+      - name: Änderungen committen und Vorbereitung entfernen
+        shell: bash
+        run: |
+          git rm .github/workflows/prepare-v1.0.82.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Build EEDTOY v1.0.82"
+          git push origin main
