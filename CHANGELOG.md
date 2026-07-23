@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.81
+
+- Gateway-Auswahl auf Eltako FAM-USB, FAM14, FGW14-USB und EnOcean USB300 reduziert.
+- Weitere nicht praktisch getestete Gateway-Typen aus der Oberfläche entfernt.
+- USB300 nutzt fuer Base-ID und Lerntelegramme Python EnOcean und `esp2_gateway_adapter`.
+- USB300 wird als experimentell sowie als ESP3-Hardware mit ESP2-Funktionsumfang gekennzeichnet.
+
 ## 1.0.80
 
 - Publisher-, CompanyName- und Copyright-Metadaten auf Denis Zirnbauer gesetzt.

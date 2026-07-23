@@ -246,10 +246,10 @@ async def try_esp3_port(port_path: str) -> Dict[str, Any]:
                 "ok": True,
                 "gateway": {
                     "type": "usb300",
-                    "label": "EnOcean ESP3 USB",
+                    "label": "EnOcean USB300",
                     "serial_path": port_path,
                     "baudRate": 57600,
-                    "protocol": "esp3-python",
+                    "protocol": "esp3-python-esp2-adapter",
                     "parser": "python-esp3-async_base_id",
                     "base_id": base_id,
                 },

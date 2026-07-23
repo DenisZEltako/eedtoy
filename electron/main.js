@@ -355,7 +355,7 @@ function buildFamUsbRdIdBase() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// PROTOCOL 2: Standard ESP3 CO_RD_IDBASE (USB300, USB400, USB515)
+// PROTOCOL 2: Standard ESP3 CO_RD_IDBASE (EnOcean USB300 fallback)
 // ─────────────────────────────────────────────────────────────────
 function buildEsp3RdIdBase() {
   const header = Buffer.from([0x00, 0x01, 0x00, 0x05]);
@@ -589,17 +589,11 @@ function readBaseIdFromPort(portPath, baudRate, protocol, options = {}) {
   });
 }
 
-function guessGatewayType(candidate, manufacturer = '') {
-  const m = manufacturer.toLowerCase();
+function guessGatewayType(candidate) {
   if (candidate.protocol === 'fam14-memory') return 'fam14';
   if (candidate.protocol === 'esp2-fam-usb') return 'fam-usb';
   if (candidate.protocol === 'esp2') return candidate.baudRate === 57600 ? 'fgw14usb' : 'fam-usb';
-  if (candidate.protocol === 'esp3') {
-    if (m.includes('piotek')) return 'piotek';
-    if (m.includes('tcm')) return 'tcm515';
-    if (m.includes('enocean')) return 'usb300';
-    return 'usb300';
-  }
+  if (candidate.protocol === 'esp3') return 'usb300';
   return 'fam-usb';
 }
 
@@ -623,14 +617,14 @@ function makeCandidatesForPort(portInfo) {
     add(57600, 'esp2', 'Eltako FAM14/FGW14-USB');
   }
   if (m.includes('enocean') || m.includes('usb') || m.includes('serial') || m.includes('com')) {
-    add(57600, 'esp3', 'EnOcean ESP3 USB');
+    add(57600, 'esp3', 'EnOcean USB300 (ESP3 -> ESP2 Adapter)');
   }
 
   add(9600, 'fam14-memory', 'Eltako FAM14 Base-ID aus Speicher');
   add(57600, 'fam14-memory', 'Eltako FAM14 Base-ID aus Speicher');
   add(9600, 'esp2-fam-usb', 'Eltako FAM-USB');
   add(57600, 'esp2', 'Eltako FAM14/FGW14-USB');
-  add(57600, 'esp3', 'EnOcean ESP3 USB');
+  add(57600, 'esp3', 'EnOcean USB300 (ESP3 -> ESP2 Adapter)');
   add(9600, 'esp2', 'ESP2 9600 fallback');
 
   const seen = new Set();
@@ -1387,11 +1381,14 @@ ipcMain.handle('read-base-id', async (_, portPath, baudRate, protocol) => {
 
   // FAM14 Base-ID reading is Eltako-bus-specific. Prefer the Python bridge that
   // uses eltakobus, the same stack used by the EnOcean Device Manager.
-  if (proto === 'fam14-python' || proto === 'eltakobus-fam14' || proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb') {
+  if (proto === 'fam14-python' || proto === 'eltakobus-fam14' || proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb' || proto === 'usb300-python') {
     const isFamUsb = proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb';
-    const py = await runPythonDetector(portPath || '', isFamUsb ? 'fam-usb' : 'fam14');
+    const isUsb300 = proto === 'usb300-python';
+    const detectorMode = isUsb300 ? 'esp3' : (isFamUsb ? 'fam-usb' : 'fam14');
+    const gatewayType = isUsb300 ? 'usb300' : (isFamUsb ? 'fam-usb' : 'fam14');
+    const py = await runPythonDetector(portPath || '', detectorMode);
     if (py.ok && py.gateway?.base_id) {
-      rememberBusConnection(py.gateway.serial_path || portPath, isFamUsb ? 'fam-usb' : 'fam14', py.gateway.baudRate || 57600);
+      rememberBusConnection(py.gateway.serial_path || portPath, gatewayType, py.gateway.baudRate || 57600);
       return {
         ok: true,
         baseId: py.gateway.base_id,
@@ -1404,7 +1401,9 @@ ipcMain.handle('read-base-id', async (_, portPath, baudRate, protocol) => {
     }
     return {
       ok: false,
-      error: py.error || (isFamUsb ? 'Python-FAM-USB-Erkennung lieferte keine Base-ID' : 'Python-FAM14-Erkennung lieferte keine Base-ID'),
+      error: py.error || (isUsb300
+        ? 'Python-USB300-Erkennung ueber esp2_gateway_adapter lieferte keine Base-ID'
+        : (isFamUsb ? 'Python-FAM-USB-Erkennung lieferte keine Base-ID' : 'Python-FAM14-Erkennung lieferte keine Base-ID')),
       attempts: py.attempts || [],
       bridge: 'python',
     };

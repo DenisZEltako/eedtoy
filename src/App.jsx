@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-const APP_VERSION = "1.0.80";
+const APP_VERSION = "1.0.81";
 
 // ─────────────────────────────────────────────────────────────────
 // EEP Database — Eltako Home Assistant Integration
@@ -421,14 +421,10 @@ function generateYaml(gateway, devices, extraGateways = [], pct14BaseId = "") {
 }
 
 const GATEWAY_TYPES = [
-  { value:"fam-usb",   label:"Eltako FAM-USB",           desc:"ESP2 · 9600 baud · Wireless",         has_base_id:true,  has_serial:true,  has_lan:false, baud:9600,  proto:"fam-usb-python" },
-  { value:"fam14",     label:"Eltako FAM14",              desc:"Eltakobus · RS485 Bus · 57600 baud",   has_base_id:true,  has_serial:true,  has_lan:false, baud:57600, proto:"fam14-python" },
-  { value:"fgw14usb",  label:"Eltako FGW14-USB",          desc:"ESP2 · RS485 Bus · 57600 baud",        has_base_id:true,  has_serial:true,  has_lan:false, baud:57600, proto:"esp2" },
-  { value:"usb300",    label:"EnOcean USB300",             desc:"ESP3 · 57600 baud · Wireless",         has_base_id:true,  has_serial:true,  has_lan:false, baud:57600, proto:"esp3" },
-  { value:"usb400",    label:"EnOcean USB400 / USB515",    desc:"ESP3 · 57600 baud · Wireless",         has_base_id:true,  has_serial:true,  has_lan:false, baud:57600, proto:"esp3" },
-  { value:"piotek",    label:"PioTek FAM-USB 515",         desc:"ESP3 · 57600 baud · Wireless",         has_base_id:true,  has_serial:true,  has_lan:false, baud:57600, proto:"esp3" },
-  { value:"mgw-lan",   label:"PioTek MGW LAN",             desc:"ESP3 via TCP/LAN · Port 5100",         has_base_id:false, has_serial:false, has_lan:true,  baud:0,     proto:"esp3" },
-  { value:"tcm515",    label:"EUL EnOcean USB/WLAN TCM515",desc:"ESP3 · USB oder WiFi · 57600 baud · Wireless", has_base_id:true,  has_serial:true,  has_lan:false, baud:57600, proto:"esp3" },
+  { value:"fam-usb",  label:"Eltako FAM-USB",  desc:"ESP2 · 9600 baud · Wireless", has_base_id:true, has_serial:true, has_lan:false, baud:9600, proto:"fam-usb-python" },
+  { value:"fam14",    label:"Eltako FAM14",     desc:"Eltakobus · RS485 Bus · 57600 baud", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"fam14-python" },
+  { value:"fgw14usb", label:"Eltako FGW14-USB", desc:"ESP2 · RS485 Bus · 57600 baud", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"esp2" },
+  { value:"usb300",   label:"EnOcean USB300 (experimentell)", desc:"ESP3-Hardware · ESP2-Funktionsumfang · 57600 baud · Python EnOcean / esp2_gateway_adapter", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"usb300-python" },
 ];
 
 

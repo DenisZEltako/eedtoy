@@ -8,12 +8,13 @@ EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14
 
 ➡️ **[Aktuelle Windows-Version herunterladen](https://github.com/DenisZEltako/eedtoy/releases/latest)**
 
-Unter **Assets** die Datei `EEDTOY-Setup-1.0.80.exe` herunterladen.
+Unter **Assets** die Datei `EEDTOY-Setup-<Version>.exe` herunterladen.
 
 ## Funktionen
 
-- FAM14-, FAM-USB- und FGW14-USB-Unterstützung
+- FAM14-, FAM-USB-, FGW14-USB- und EnOcean-USB300-Unterstützung
 - automatische Gateway- und Base-ID-Erkennung
+- USB300 experimentell über Python EnOcean und `esp2_gateway_adapter` (ESP3-Hardware mit ESP2-Funktionsumfang)
 - PCT14/XML-Import
 - automatische Geräte-ID-Erkennung über EnOcean-Telegramme
 - verwaltete Sender-IDs und Kollisionsprüfung
