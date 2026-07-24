@@ -78,11 +78,10 @@ jobs:
 
           test_path = Path("tests/yaml_generation_regression.js")
           test = test_path.read_text(encoding="utf-8")
-          old_test = "assert(api.APP_VERSION === '1.0.93', 'Application version is 1.0.93');"
-          new_test = "assert(api.APP_VERSION === '1.0.94', 'Application version is 1.0.94');"
-          if old_test not in test:
-              raise SystemExit("Version assertion in YAML regression test not found")
-          test_path.write_text(test.replace(old_test, new_test, 1), encoding="utf-8")
+          if "1.0.93" not in test:
+              raise SystemExit("No remaining v1.0.93 test references found")
+          test = test.replace("1.0.93", "1.0.94")
+          test_path.write_text(test, encoding="utf-8")
 
           main_path = Path("electron/main.js")
           main = main_path.read_text(encoding="utf-8")
@@ -137,6 +136,8 @@ jobs:
 
           test = Path("tests/yaml_generation_regression.js").read_text(encoding="utf-8")
           assert "Application version is 1.0.94" in test
+          assert "# Version: 1.0.94" in test
+          assert "1.0.93" not in test
 
           main = Path("electron/main.js").read_text(encoding="utf-8")
           assert "import serial, serial_asyncio, yaml, eltakobus" in main
