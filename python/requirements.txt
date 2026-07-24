@@ -1,4 +1,4 @@
-
-eltako14bus
-pyserial
+eltako14bus[serial]==0.0.82
+pyserial>=3.5
+pyserial-asyncio>=0.6
 pyyaml>=6.0.1
