@@ -26,67 +26,6 @@ EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14
 
 Die Anwendung und der Installer sind derzeit nicht digital signiert. Windows kann deshalb eine SmartScreen-Warnung anzeigen.
 
-## Entwicklung
-
-### Voraussetzungen
-
-- Node.js 20 oder neuer
-- npm
-- Python 3 für die Gateway-Funktionen
-- Windows für den vollständigen NSIS-Installer-Build
-
-### Projekt starten
-
-```powershell
-npm ci
-npm run electron:dev
-```
-
-### Frontend bauen
-
-```powershell
-npm run build
-```
-
-### Windows-Installer bauen
-
-```powershell
-npm run build:installer
-```
-
-Der Installer wird unter `dist-exe/` erzeugt.
-
-### Python-Abhängigkeiten lokal installieren
-
-```powershell
-py -3 -m pip install -r python/requirements.txt
-```
-
-## GitHub-Veröffentlichung
-
-Das Repository ist ohne `node_modules`, lokale Build-Ausgaben und ausführbare Dateien vorbereitet. Es enthält einen GitHub-Actions-Workflow unter `.github/workflows/build-windows.yml`.
-
-- Pushes und Pull Requests prüfen den Windows-Build.
-- Ein Tag im Format `v1.0.93` baut den Installer und erstellt automatisch ein GitHub Release mit SHA-256-Prüfsumme.
-
-Beispiel:
-
-```powershell
-git tag v1.0.93
-git push origin v1.0.93
-```
-
-## Projektstruktur
-
-```text
-src/                 React-Oberfläche und Gerätedatenbank
-electron/            Electron-Hauptprozess und sichere IPC-Bridge
-python/              Gateway-Erkennung, Teach-in und Sender-ID-Werkzeuge
-build/               Windows-Icons, NSIS- und afterPack-Konfiguration
-public/               statische Anwendungsressourcen
-.github/              Build-Workflow und Vorlagen für GitHub
-```
-
 ## Datenschutz und Sicherheit
 
 EEDTOY verarbeitet Konfigurationen lokal. Serielle Gerätezugriffe und Python-Unterprozesse werden auf dem Rechner des Benutzers ausgeführt. Projektdateien können Geräte-IDs, Gateway-Daten und lokale COM-Port-Angaben enthalten und sollten entsprechend geschützt werden.
