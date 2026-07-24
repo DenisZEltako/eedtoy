@@ -945,7 +945,7 @@ async function tryInstallPythonWithWinget() {
 }
 
 async function validatePythonRuntime(pythonCmd, argsPrefix = []) {
-  const code = 'import serial, yaml, eltakobus; print("ok")';
+  const code = 'import serial, serial_asyncio, yaml, eltakobus; print("ok")';
   const r = await runProcess(pythonCmd, [...argsPrefix, '-c', code], { timeoutMs: 15000 });
   return { ok: r.ok && String(r.stdout || '').includes('ok'), details: r };
 }
@@ -1004,7 +1004,7 @@ async function ensurePythonRuntime() {
     const upgradePip = await runProcess(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip'], { timeoutMs: 180000 });
     attempts.push({ step: 'upgrade-pip', ok: upgradePip.ok, code: upgradePip.code, stderr: (upgradePip.stderr || upgradePip.error || '').slice(-4000) });
 
-    const installReq = await runProcess(venvPython, ['-m', 'pip', 'install', '-r', requirements], { timeoutMs: 300000 });
+    const installReq = await runProcess(venvPython, ['-m', 'pip', 'install', '--upgrade', '-r', requirements], { timeoutMs: 300000 });
     attempts.push({ step: 'install-requirements', ok: installReq.ok, code: installReq.code, stderr: (installReq.stderr || installReq.error || '').slice(-8000) });
     if (!installReq.ok) {
       pythonRuntimeState = { ok: false, error: 'Python-Pakete konnten nicht automatisch installiert werden: ' + ((installReq.stderr || installReq.error || '').slice(-1200)), attempts };
@@ -1031,19 +1031,9 @@ async function getPythonCommands(script) {
   const setup = await ensurePythonRuntime();
   if (setup.ok) return { ok: true, commands: [{ cmd: setup.pythonPath, args: [script] }], setup };
 
-  // Fall back to global commands. This preserves existing installations where
-  // an administrator already installed the packages globally.
-  const fallback = process.platform === 'win32'
-    ? [
-        { cmd: 'py', args: ['-3', script] },
-        { cmd: 'python', args: [script] },
-        { cmd: 'python3', args: [script] },
-      ]
-    : [
-        { cmd: 'python3', args: [script] },
-        { cmd: 'python', args: [script] },
-      ];
-  return { ok: false, commands: fallback, setup };
+  // Never execute the detector with an unverified global Python.
+  // Otherwise users receive misleading ModuleNotFoundError messages.
+  return { ok: false, commands: [], setup };
 }
 
 // ─────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getStoredLanguage, storeLanguage, translate, translateDeviceLabel, translateGroup, translatePlatform, translateRuntimeText } from "./i18n.js";
 
-const APP_VERSION = "1.0.93";
+const APP_VERSION = "1.0.94";
 
 // ─────────────────────────────────────────────────────────────────
 // EEP Database — Eltako Home Assistant Integration
@@ -930,7 +930,7 @@ export default function App() {
     const found = await window.electronAPI.listPorts();
     setPorts(found);
     if (found.length > 0) {
-      setGateway(g => ({ ...g, serial_path: found[0].path }));
+      setGateway(g => ({ ...g, serial_path: found.some(p => p.path === g.serial_path) ? g.serial_path : found[0].path }));
       setDetectMsg(t(found.length === 1 ? "status.serialPortsFound" : "status.serialPortsFoundPlural", { count: found.length, ports: found.map(p => p.path).join(", ") }));
     } else {
       setDetectMsg(t("status.noSerialPort"));
@@ -1451,18 +1451,29 @@ export default function App() {
                     <div>
                       <label>{t("gateway.serialPort")}</label>
                       <div style={{display:"flex",gap:".4rem"}}>
-                        <input
-                          value={gateway.serial_path}
-                          onChange={e=>setGateway(g=>({...g,serial_path:e.target.value}))}
-                          placeholder={t("gateway.serialPortPlaceholder")}
-                          list="serial-port-list"
-                          style={{flex:1}}
-                        />
-                        <datalist id="serial-port-list">
-                          {ports.map(p=>(
-                            <option key={p.path} value={p.path}>{p.manufacturer?`${p.path} — ${p.manufacturer}`:p.path}</option>
-                          ))}
-                        </datalist>
+              <div style={{display:"flex",flexDirection:"column",gap:".35rem",flex:1}}>
+                <select
+                  value={ports.some(p=>p.path===gateway.serial_path) ? gateway.serial_path : "__manual__"}
+                  onChange={e=>{
+                    const value = e.target.value;
+                    setGateway(g=>({...g,serial_path:value==="__manual__"?"":value}));
+                  }}
+                >
+                  <option value="__manual__">{language==="en"?"Enter COM port manually":"COM-Port manuell eingeben"}</option>
+                  {ports.map(p=>(
+                    <option key={p.path} value={p.path}>
+                      {p.manufacturer?`${p.path} — ${p.manufacturer}`:p.path}
+                    </option>
+                  ))}
+                </select>
+                {!ports.some(p=>p.path===gateway.serial_path)&&(
+                  <input
+                    value={gateway.serial_path}
+                    onChange={e=>setGateway(g=>({...g,serial_path:e.target.value}))}
+                    placeholder={t("gateway.serialPortPlaceholder")}
+                  />
+                )}
+              </div>
                         {isElectron&&(
                           <button className="btn ghost" style={{padding:".4rem .7rem",fontSize:".7rem",whiteSpace:"nowrap"}} onClick={handleScanPorts}>{t("common.search")}</button>
                         )}

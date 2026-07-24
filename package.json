@@ -1,6 +1,6 @@
 {
   "name": "eedtoy",
-  "version": "1.0.93",
+  "version": "1.0.94",
   "description": "EEDTOY - ELTAKO EnOcean Device to YAML Generator (privat entwickelt)",
   "author": "D. Zirnbauer",
   "main": "electron/main.js",
