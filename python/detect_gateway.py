@@ -144,24 +144,26 @@ async def try_rs485_port(port_path: str, baud_rate: int, target: str = "auto") -
     bus = None
     try:
         log("try RS485", port_path, baud_rate, "target=", target)
+        delay_message = 0.001 if baud_rate == 57600 else 0.2
         bus = RS485SerialInterfaceV2(
             port_path,
             baud_rate=baud_rate,
-            delay_message=0.2,
+            delay_message=delay_message,
             auto_reconnect=False,
         )
         bus.start()
         bus.is_serial_connected.wait(timeout=2)
 
         if not bus.is_active():
-            return {"ok": False, "error": "Port geöffnet, aber RS485-Schnittstelle nicht aktiv"}
+            return {"ok": False, "error": "Port geöffnet, aber RS485Interface nicht aktiv"}
 
         suppress_echo = bool(getattr(bus, "suppress_echo", False))
         log("RS485 active", port_path, baud_rate, "suppress_echo=", suppress_echo)
 
+        # Same detection criterion as EnOcean Device Manager: suppress_echo means FAM14.
         if suppress_echo:
-            if target in ("fam-usb", "fgw14"):
-                return {"ok": False, "error": "Port verhält sich wie FAM14 (suppress_echo)."}
+            if target == "fam-usb":
+                return {"ok": False, "error": "Port verhält sich wie FAM14 (suppress_echo), nicht wie FAM-USB"}
             base_id = await asyncio.wait_for(get_fam14_base_id(bus), timeout=8)
             if base_id:
                 return {
@@ -178,6 +180,7 @@ async def try_rs485_port(port_path: str, baud_rate: int, target: str = "auto") -
                 }
             return {"ok": False, "error": "FAM14 erkannt, aber Base-ID konnte nicht gelesen werden"}
 
+        # FAM-USB: only test AB 58 at 9600, matching the reference implementation.
         if baud_rate == 9600 and target in ("auto", "fam-usb", "rs485"):
             base_id = await asyncio.wait_for(get_fam_usb_base_id(bus), timeout=5)
             if base_id:
@@ -194,24 +197,26 @@ async def try_rs485_port(port_path: str, baud_rate: int, target: str = "auto") -
                     },
                 }
 
-        if baud_rate == 57600 and target in ("auto", "fgw14", "rs485"):
-            return {
-                "ok": True,
-                "gateway": {
-                    "type": "fgw14usb",
-                    "label": "Eltako FGW14-USB",
-                    "serial_path": port_path,
-                    "baudRate": baud_rate,
-                    "protocol": "eltakobus-rs485-no-suppress-echo",
-                    "parser": "python-eltakobus-rs485-no-suppress-echo",
-                    "base_id": "",
-                },
+        # EnOcean Device Manager criterion: 57600 baud and an active RS485
+        # interface without echo suppression is classified as FGW14-USB.
+        if baud_rate == 57600:
+            gateway = {
+                "type": "fgw14usb",
+                "label": "Eltako FGW14-USB",
+                "serial_path": port_path,
+                "baudRate": baud_rate,
+                "protocol": "eltakobus-rs485-no-suppress-echo",
+                "parser": "python-eltakobus-rs485-no-suppress-echo",
+                "base_id": "",
             }
+            if target in ("auto", "fgw14", "rs485"):
+                return {"ok": True, "gateway": gateway}
+            return {"ok": False, "possible_gateway": gateway, "error": "Port behaves like FGW14-USB."}
 
-        return {"ok": False, "error": "Keine passende ELTAKO-Gateway-Antwort"}
+        return {"ok": False, "error": "Keine passende RS485/FAM Antwort"}
 
-    except Exception as exc:
-        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     finally:
         if bus is not None:
             try:
@@ -220,6 +225,8 @@ async def try_rs485_port(port_path: str, baud_rate: int, target: str = "auto") -
             except Exception:
                 pass
 
+
+
 async def detect(preferred_path: str = "", mode: str = "auto") -> Dict[str, Any]:
     ports = list_ports(preferred_path)
     attempts: List[Dict[str, Any]] = []
@@ -227,43 +234,52 @@ async def detect(preferred_path: str = "", mode: str = "auto") -> Dict[str, Any]
     if not ports:
         return {"ok": False, "ports": [], "attempts": [], "error": "Kein serieller Port gefunden"}
 
-    for port_info in ports:
-        port_path = port_info["path"]
+    # Match the reference detector's order closely. For explicit modes we keep
+    # the search narrow so selecting FAM-USB does not accidentally classify a
+    # FAM14 on the same COM port.
+    for p in ports:
+        port_path = p["path"]
+        candidates = []
         if mode == "auto":
-            candidates = [(9600, "auto"), (57600, "auto")]
+            candidates.extend([("rs485", 9600, "auto"), ("rs485", 57600, "auto")])
         elif mode == "fam-usb":
-            candidates = [(9600, "fam-usb")]
+            candidates.append(("rs485", 9600, "fam-usb"))
         elif mode == "fam14":
-            candidates = [(57600, "fam14"), (9600, "fam14")]
+            candidates.extend([("rs485", 57600, "fam14"), ("rs485", 9600, "fam14")])
         elif mode == "fgw14":
-            candidates = [(57600, "fgw14")]
-        else:
-            candidates = [(9600, "rs485"), (57600, "rs485")]
+            candidates.append(("rs485", 57600, "fgw14"))
+        elif mode == "rs485":
+            candidates.extend([("rs485", 9600, "rs485"), ("rs485", 57600, "rs485")])
 
-        for baud_rate, target in candidates:
-            result = await try_rs485_port(port_path, baud_rate, target)
+        for proto, baud, target in candidates:
+            result = await try_rs485_port(port_path, baud, target)
+
             attempts.append({
                 "path": port_path,
-                "manufacturer": port_info.get("manufacturer", ""),
-                "description": port_info.get("description", ""),
-                "protocol": "rs485",
-                "baudRate": baud_rate,
+                "manufacturer": p.get("manufacturer", ""),
+                "description": p.get("description", ""),
+                "protocol": proto,
+                "baudRate": baud,
                 "ok": result.get("ok", False),
                 "error": result.get("error", ""),
+                "possible_gateway": result.get("possible_gateway"),
             })
 
             if result.get("ok"):
-                gateway = result["gateway"]
-                gateway["manufacturer"] = port_info.get("manufacturer", "")
-                gateway["description"] = port_info.get("description", "")
-                return {"ok": True, "gateway": gateway, "ports": ports, "attempts": attempts}
+                gw = result["gateway"]
+                gw["manufacturer"] = p.get("manufacturer", "")
+                gw["description"] = p.get("description", "")
+                return {"ok": True, "gateway": gw, "ports": ports, "attempts": attempts}
 
+    possible = [a.get("possible_gateway") for a in attempts if a.get("possible_gateway")]
     return {
         "ok": False,
         "ports": ports,
         "attempts": attempts,
-        "error": "Ports wurden getestet, aber kein unterstütztes ELTAKO-Gateway erkannt. Prüfe COM-Port, Baudrate und ob PCT14 oder eine andere Software den Port belegt.",
+        "possible_gateways": possible,
+        "error": "Ports wurden getestet, aber keine Base-ID konnte gelesen werden. Falls FAM14 angeschlossen ist: prüfen, ob der Bus frei ist und keine andere Software den COM-Port belegt.",
     }
+
 
 async def main() -> None:
     parser = argparse.ArgumentParser()

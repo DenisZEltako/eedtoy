@@ -58,7 +58,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $VenvPython -m pip install -r $Requirements
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-& $VenvPython -c "import serial, yaml, eltakobus, esp2_gateway_adapter; print('EEDTOY Python runtime OK')"
+& $VenvPython -c "import serial, yaml, eltakobus; print('EEDTOY Python runtime OK')"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 Write-Host "EEDTOY Python-Laufzeit ist bereit."

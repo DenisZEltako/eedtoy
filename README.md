@@ -2,19 +2,15 @@
 
 EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14-Import und den YAML-Export für Home Assistant.
 
-> **Hinweis:** EEDTOY wird ausschließlich privat entwickelt und ist kein offizielles Produkt der ELTAKO GmbH. ELTAKO-Produktnamen werden ausschließlich zur Beschreibung der Gerätekompatibilität verwendet.
->
-## Download
-
-➡️ **[Aktuelle Windows-Version herunterladen](https://github.com/DenisZEltako/eedtoy/releases/latest)**
-
-Unter **Assets** die Datei `EEDTOY-Setup-<Version>.exe` herunterladen.
+> **Hinweis:** EEDTOY wird privat von D. Zirnbauer entwickelt und ist kein offizielles Produkt der ELTAKO GmbH. ELTAKO-Produktnamen werden ausschließlich zur Beschreibung der Gerätekompatibilität verwendet.
 
 ## Funktionen
 
-- Unterstützung für Eltako FAM-USB, FAM14 und FGW14-USB
-- automatische Gateway-Erkennung für die drei unterstützten ELTAKO-Gateways
-- Base-ID-Auslesen bei FAM-USB und FAM14; beim FGW14-USB aus PCT14 übernehmen oder manuell eintragen
+- FFG7B-Fenstergriff mit drei Zuständen (geschlossen, gekippt, offen) für A5-14-09 und F6-10-00
+- FTR55/65-Familie in den Betriebsarten TF61 (A5-38-08) und FHK (A5-10-06)
+- FDG14 als dimmbarer DALI-Aktor mit FUNC=38 / Command 2 (A5-38-08)
+- FAM14-, FAM-USB- und FGW14-USB-Unterstützung
+- automatische Gateway- und Base-ID-Erkennung
 - PCT14/XML-Import
 - automatische Geräte-ID-Erkennung über EnOcean-Telegramme
 - verwaltete Sender-IDs und Kollisionsprüfung
@@ -30,7 +26,7 @@ Unter **Assets** die Datei `EEDTOY-Setup-<Version>.exe` herunterladen.
 
 Die Anwendung und der Installer sind derzeit nicht digital signiert. Windows kann deshalb eine SmartScreen-Warnung anzeigen.
 
-## Manuelle Installation
+## Entwicklung
 
 ### Voraussetzungen
 
@@ -68,11 +64,17 @@ py -3 -m pip install -r python/requirements.txt
 
 ## GitHub-Veröffentlichung
 
-Das Repository enthält den GitHub-Actions-Workflow `.github/workflows/build-windows.yml`.
+Das Repository ist ohne `node_modules`, lokale Build-Ausgaben und ausführbare Dateien vorbereitet. Es enthält einen GitHub-Actions-Workflow unter `.github/workflows/build-windows.yml`.
 
-- Jeder Push auf `main` baut automatisch den Windows-Installer.
-- Installer und SHA-256-Prüfsumme stehen im erfolgreichen Workflow-Lauf unter **Artifacts** bereit.
-- GitHub Releases werden manuell erstellt und mit dem geprüften Installer ergänzt.
+- Pushes und Pull Requests prüfen den Windows-Build.
+- Ein Tag im Format `v1.0.93` baut den Installer und erstellt automatisch ein GitHub Release mit SHA-256-Prüfsumme.
+
+Beispiel:
+
+```powershell
+git tag v1.0.93
+git push origin v1.0.93
+```
 
 ## Projektstruktur
 

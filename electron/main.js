@@ -1,6 +1,7 @@
 const { app, BrowserWindow, shell, ipcMain, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs/promises');
+const { mainText, normalizeLanguage } = require('./i18n-main');
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -20,39 +21,128 @@ function getAppIconPath() {
 
 
 
+let mainWindow = null;
+let currentLanguage = 'de';
+
+function t(key, variables = {}) {
+  return mainText(currentLanguage, key, variables);
+}
+
+function languageFilePath() {
+  return path.join(app.getPath('userData'), 'language.txt');
+}
+
+async function loadLanguage() {
+  const candidates = [
+    languageFilePath(),
+    path.join(process.env.APPDATA || '', 'eedtoy', 'language.txt'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      const value = (await fs.readFile(candidate, 'utf8')).trim();
+      if (value) return normalizeLanguage(value);
+    } catch (_) {}
+  }
+  return normalizeLanguage(app.getLocale());
+}
+
+async function persistLanguage(language) {
+  currentLanguage = normalizeLanguage(language);
+  await fs.mkdir(path.dirname(languageFilePath()), { recursive: true });
+  await fs.writeFile(languageFilePath(), currentLanguage, 'utf8');
+}
+
+function sendMenuAction(action) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('menu-action', action);
+}
+
+function buildApplicationMenu() {
+  const template = [
+    {
+      label: t('menu.file'),
+      submenu: [
+        { label: t('menu.open'), accelerator: 'CmdOrCtrl+O', click: () => sendMenuAction('open-project') },
+        { label: t('menu.save'), accelerator: 'CmdOrCtrl+S', click: () => sendMenuAction('save-project') },
+        { label: t('menu.saveAs'), accelerator: 'CmdOrCtrl+Shift+S', click: () => sendMenuAction('save-project-as') },
+        { type: 'separator' },
+        { label: t('menu.exit'), role: 'quit' },
+      ],
+    },
+    {
+      label: t('menu.edit'),
+      submenu: [
+        { label: t('menu.undo'), role: 'undo' }, { label: t('menu.redo'), role: 'redo' }, { type: 'separator' },
+        { label: t('menu.cut'), role: 'cut' }, { label: t('menu.copy'), role: 'copy' }, { label: t('menu.paste'), role: 'paste' },
+        { label: t('menu.selectAll'), role: 'selectAll' }, { type: 'separator' },
+        {
+          label: t('menu.language'),
+          submenu: [
+            { label: 'Deutsch', type: 'radio', checked: currentLanguage === 'de', click: () => changeLanguage('de') },
+            { label: 'English', type: 'radio', checked: currentLanguage === 'en', click: () => changeLanguage('en') },
+          ],
+        },
+      ],
+    },
+    {
+      label: t('menu.help'),
+      submenu: [
+        { label: t('menu.about'), click: () => showAboutDialog() },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+async function changeLanguage(language) {
+  await persistLanguage(language);
+  buildApplicationMenu();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('language-changed', currentLanguage);
+}
+
+function showAboutDialog() {
+  dialog.showMessageBox(mainWindow || undefined, {
+    type: 'info',
+    title: t('menu.aboutTitle'),
+    message: 'EEDTOY – ELTAKO EnOcean Device to YAML Generator',
+    detail: t('about.detail', { version: app.getVersion() }),
+    buttons: ['OK'],
+    icon: getAppIconPath(),
+  });
+}
+
 const PROJECT_FORMAT = 'eedtoy-project';
 const PROJECT_SCHEMA_VERSION = 1;
 const MAX_PROJECT_SIZE_BYTES = 10 * 1024 * 1024;
 
 function safeProjectFileName(value) {
-  const base = String(value || 'EEDTOY-Projekt')
+  const base = String(value || t('project.defaultName'))
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .trim();
-  return base || 'EEDTOY-Projekt';
+  return base || t('project.defaultName');
 }
 
 function validateProjectDocument(project) {
   if (!project || typeof project !== 'object' || Array.isArray(project)) {
-    throw new Error('Die Datei enthält kein gültiges EEDTOY-Projekt.');
+    throw new Error(t('project.invalidDocument'));
   }
   if (project.project_format !== PROJECT_FORMAT) {
-    throw new Error('Die Datei ist kein EEDTOY-Projekt.');
+    throw new Error(t('project.wrongFormat'));
   }
   const schemaVersion = Number(project.schema_version || 0);
   if (!Number.isInteger(schemaVersion) || schemaVersion < 1) {
-    throw new Error('Die Projektdatei hat keine gültige Schema-Version.');
+    throw new Error(t('project.invalidSchema'));
   }
   if (schemaVersion > PROJECT_SCHEMA_VERSION) {
-    throw new Error(`Die Projektdatei verwendet Schema ${schemaVersion}. Diese EEDTOY-Version unterstützt maximal Schema ${PROJECT_SCHEMA_VERSION}.`);
+    throw new Error(t('project.unsupportedSchema', { schema: schemaVersion, maxSchema: PROJECT_SCHEMA_VERSION }));
   }
   if (!project.state || typeof project.state !== 'object' || Array.isArray(project.state)) {
-    throw new Error('Der Projektzustand fehlt oder ist beschädigt.');
+    throw new Error(t('project.missingState'));
   }
   if (!Array.isArray(project.state.devices)) {
-    throw new Error('Die Geräteliste im Projekt ist beschädigt.');
+    throw new Error(t('project.invalidDevices'));
   }
   if (!project.state.gateway || typeof project.state.gateway !== 'object' || Array.isArray(project.state.gateway)) {
-    throw new Error('Die Gateway-Konfiguration im Projekt ist beschädigt.');
+    throw new Error(t('project.invalidGateway'));
   }
 }
 
@@ -60,14 +150,14 @@ ipcMain.handle('save-project-as', async (_event, payload = {}) => {
   try {
     const project = payload.project;
     validateProjectDocument(project);
-    const suggestedName = safeProjectFileName(payload.suggestedName || payload.currentFileName || 'EEDTOY-Projekt');
+    const suggestedName = safeProjectFileName(payload.suggestedName || payload.currentFileName || t('project.defaultName'));
     const defaultPath = suggestedName.toLowerCase().endsWith('.eedtoy') ? suggestedName : `${suggestedName}.eedtoy`;
     const result = await dialog.showSaveDialog({
-      title: 'EEDTOY-Projekt speichern unter',
+      title: t('project.saveDialogTitle'),
       defaultPath,
       filters: [
-        { name: 'EEDTOY-Projekt', extensions: ['eedtoy'] },
-        { name: 'JSON-Datei', extensions: ['json'] },
+        { name: t('project.filterProject'), extensions: ['eedtoy'] },
+        { name: t('project.filterJson'), extensions: ['json'] },
       ],
       properties: ['createDirectory', 'showOverwriteConfirmation'],
     });
@@ -77,7 +167,7 @@ ipcMain.handle('save-project-as', async (_event, payload = {}) => {
     if (!path.extname(filePath)) filePath += '.eedtoy';
     const serialized = JSON.stringify(project, null, 2) + '\n';
     if (Buffer.byteLength(serialized, 'utf8') > MAX_PROJECT_SIZE_BYTES) {
-      throw new Error('Das Projekt ist größer als 10 MB und kann nicht gespeichert werden.');
+      throw new Error(t('project.tooLargeToSave'));
     }
     await fs.writeFile(filePath, serialized, 'utf8');
     return { ok: true, path: filePath, fileName: path.basename(filePath) };
@@ -87,12 +177,36 @@ ipcMain.handle('save-project-as', async (_event, payload = {}) => {
   }
 });
 
+ipcMain.handle('save-project', async (_event, payload = {}) => {
+  try {
+    const project = payload.project;
+    validateProjectDocument(project);
+    const targetPath = String(payload.path || '').trim();
+    if (!targetPath) return { ok: false, needsSaveAs: true };
+    const serialized = JSON.stringify(project, null, 2) + '\n';
+    if (Buffer.byteLength(serialized, 'utf8') > MAX_PROJECT_SIZE_BYTES) {
+      throw new Error(t('project.tooLargeToSave'));
+    }
+    await fs.writeFile(targetPath, serialized, 'utf8');
+    return { ok: true, path: targetPath, fileName: path.basename(targetPath) };
+  } catch (error) {
+    console.error('[save-project]', error);
+    return { ok: false, error: error.message || String(error) };
+  }
+});
+
+ipcMain.handle('get-language', async () => currentLanguage);
+ipcMain.handle('set-language', async (_event, language) => {
+  await changeLanguage(language);
+  return { ok: true, language: currentLanguage };
+});
+
 ipcMain.handle('open-project', async () => {
   try {
     const result = await dialog.showOpenDialog({
-      title: 'EEDTOY-Projekt öffnen',
+      title: t('project.openDialogTitle'),
       filters: [
-        { name: 'EEDTOY-Projekt', extensions: ['eedtoy', 'json'] },
+        { name: t('project.filterProject'), extensions: ['eedtoy', 'json'] },
       ],
       properties: ['openFile'],
     });
@@ -101,14 +215,14 @@ ipcMain.handle('open-project', async () => {
     const filePath = result.filePaths[0];
     const stat = await fs.stat(filePath);
     if (stat.size > MAX_PROJECT_SIZE_BYTES) {
-      throw new Error('Die Projektdatei ist größer als 10 MB und wird aus Sicherheitsgründen nicht geöffnet.');
+      throw new Error(t('project.tooLargeToOpen'));
     }
     const raw = await fs.readFile(filePath, 'utf8');
     let project;
     try {
       project = JSON.parse(raw);
     } catch (error) {
-      throw new Error(`Die Projektdatei enthält ungültiges JSON: ${error.message || error}`);
+      throw new Error(t('project.invalidJson', { error: error.message || error }));
     }
     validateProjectDocument(project);
     return { ok: true, path: filePath, fileName: path.basename(filePath), project };
@@ -127,8 +241,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
     title: 'EEDTOY – ELTAKO EnOcean Device to YAML Generator',
-    backgroundColor: '#080d18', show: false,
+    backgroundColor: '#080d18',
   });
+  mainWindow = win;
+  win.on('closed', () => { if (mainWindow === win) mainWindow = null; });
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 
   // Native context menu for editable fields. Electron does not provide one by
@@ -140,26 +256,49 @@ function createWindow() {
 
     if (isEditable) {
       template.push(
-        { label: 'Ausschneiden', role: 'cut', enabled: hasSelection },
-        { label: 'Kopieren', role: 'copy', enabled: hasSelection },
-        { label: 'Einfügen', role: 'paste' },
+        { label: t('menu.cut'), role: 'cut', enabled: hasSelection },
+        { label: t('menu.copy'), role: 'copy', enabled: hasSelection },
+        { label: t('menu.paste'), role: 'paste' },
         { type: 'separator' },
-        { label: 'Alles auswählen', role: 'selectAll' },
+        { label: t('menu.selectAll'), role: 'selectAll' },
       );
     } else if (hasSelection) {
       template.push(
-        { label: 'Kopieren', role: 'copy' },
+        { label: t('menu.copy'), role: 'copy' },
         { type: 'separator' },
-        { label: 'Alles auswählen', role: 'selectAll' },
+        { label: t('menu.selectAll'), role: 'selectAll' },
       );
     }
 
     if (template.length) Menu.buildFromTemplate(template).popup({ window: win });
   });
 
-  if (isDev) { win.loadURL('http://localhost:5173'); }
-  else { win.loadFile(path.join(__dirname, '../dist/index.html')); }
-  win.once('ready-to-show', () => win.show());
+  const showMainWindow = () => {
+    if (!win.isDestroyed()) {
+      if (!win.isVisible()) win.show();
+      win.focus();
+    }
+  };
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    console.error('[startup] did-fail-load', errorCode, errorDescription, validatedURL);
+    showMainWindow();
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[startup] render-process-gone', details);
+  });
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level >= 2) console.error('[renderer]', message, `${sourceId}:${line}`);
+  });
+
+  if (isDev) {
+    win.loadURL('http://localhost:5173').catch(error => console.error('[startup] loadURL failed', error));
+  } else {
+    win.loadFile(path.join(__dirname, '../dist/index.html')).catch(error => console.error('[startup] loadFile failed', error));
+  }
+  win.once('ready-to-show', showMainWindow);
+  win.webContents.once('did-finish-load', () => setTimeout(showMainWindow, 50));
+  setTimeout(showMainWindow, 1500);
 }
 
 
@@ -297,6 +436,26 @@ async function listSerialPortsRobust(extraPath = '') {
 }
 
 // ── CRC8 table for ESP3 ───────────────────────────────────────────
+const CRC8_TABLE = [
+  0x00,0x07,0x0e,0x09,0x1c,0x1b,0x12,0x15,0x38,0x3f,0x36,0x31,0x24,0x23,0x2a,0x2d,
+  0x70,0x77,0x7e,0x79,0x6c,0x6b,0x62,0x65,0x48,0x4f,0x46,0x41,0x54,0x53,0x5a,0x5d,
+  0xe0,0xe7,0xee,0xe9,0xfc,0xfb,0xf2,0xf5,0xd8,0xdf,0xd6,0xd1,0xc4,0xc3,0xca,0xcd,
+  0x90,0x97,0x9e,0x99,0x8c,0x8b,0x82,0x85,0xa8,0xaf,0xa6,0xa1,0xb4,0xb3,0xba,0xbd,
+  0xc7,0xc0,0xc9,0xce,0xdb,0xdc,0xd5,0xd2,0xff,0xf8,0xf1,0xf6,0xe3,0xe4,0xed,0xea,
+  0xb7,0xb0,0xb9,0xbe,0xab,0xac,0xa5,0xa2,0x8f,0x88,0x81,0x86,0x93,0x94,0x9d,0x9a,
+  0x27,0x20,0x29,0x2e,0x3b,0x3c,0x35,0x32,0x1f,0x18,0x11,0x16,0x03,0x04,0x0d,0x0a,
+  0x57,0x50,0x59,0x5e,0x4b,0x4c,0x45,0x42,0x6f,0x68,0x61,0x66,0x73,0x74,0x7d,0x7a,
+  0x89,0x8e,0x87,0x80,0x95,0x92,0x9b,0x9c,0xb1,0xb6,0xbf,0xb8,0xad,0xaa,0xa3,0xa4,
+  0xf9,0xfe,0xf7,0xf0,0xe5,0xe2,0xeb,0xec,0xc1,0xc6,0xcf,0xc8,0xdd,0xda,0xd3,0xd4,
+  0x69,0x6e,0x67,0x60,0x75,0x72,0x7b,0x7c,0x51,0x56,0x5f,0x58,0x4d,0x4a,0x43,0x44,
+  0x19,0x1e,0x17,0x10,0x05,0x02,0x0b,0x0c,0x21,0x26,0x2f,0x28,0x3d,0x3a,0x33,0x34,
+  0x4e,0x49,0x40,0x47,0x52,0x55,0x5c,0x5b,0x76,0x71,0x78,0x7f,0x6a,0x6d,0x64,0x63,
+  0x3e,0x39,0x30,0x37,0x22,0x25,0x2c,0x2b,0x06,0x01,0x08,0x0f,0x1a,0x1d,0x14,0x13,
+  0xae,0xa9,0xa0,0xa7,0xb2,0xb5,0xbc,0xbb,0x96,0x91,0x98,0x9f,0x8a,0x8d,0x84,0x83,
+  0xde,0xd9,0xd0,0xd7,0xc2,0xc5,0xcc,0xcb,0xe6,0xe1,0xe8,0xef,0xfa,0xfd,0xf4,0xf3
+];
+function crc8(data) { let c=0; for(const b of data) c=CRC8_TABLE[c^b]; return c; }
+
 // ── Helpers ───────────────────────────────────────────────────────
 function fmtId(buf) {
   return Array.from(buf).map(b=>b.toString(16).toUpperCase().padStart(2,'0')).join('-');
@@ -334,7 +493,17 @@ function buildFamUsbRdIdBase() {
   return Buffer.from([0xA5, 0x5A, lenByte, ...payload, cs]);
 }
 
-// PROTOCOL 2: Standard ESP2 CO_RD_IDBASE (FAM14, FGW14-USB)
+// ─────────────────────────────────────────────────────────────────
+// Legacy ESP3 CO_RD_IDBASE helper (not exposed by EEDTOY)
+// ─────────────────────────────────────────────────────────────────
+function buildEsp3RdIdBase() {
+  const header = Buffer.from([0x00, 0x01, 0x00, 0x05]);
+  const data   = Buffer.from([0x08]); // CO_RD_IDBASE
+  return Buffer.from([0x55, ...header, crc8(header), ...data, crc8(data)]);
+}
+
+// ─────────────────────────────────────────────────────────────────
+// PROTOCOL 3: Standard ESP2 CO_RD_IDBASE (FAM14, FGW14-USB)
 // ─────────────────────────────────────────────────────────────────
 function buildEsp2RdIdBase() {
   // ESP2 fixed frame. Body is 11 bytes; first byte is H_SEQ+LEN.
@@ -412,6 +581,28 @@ function tryParseEsp2(buf) {
   return null;
 }
 
+// Parse ESP3 CO_RD_IDBASE response
+// Response type=0x02, data[0]=0x00 (OK), data[1:5] = base ID
+function tryParseEsp3(buf) {
+  for (let i = 0; i < buf.length - 7; i++) {
+    if (buf[i] !== 0x55) continue;
+    if (buf.length < i + 6) continue;
+    const dataLen = (buf[i+1] << 8) | buf[i+2];
+    const optLen  = buf[i+3];
+    const type    = buf[i+4];
+    if (crc8(buf.slice(i+1, i+5)) !== buf[i+5]) continue;
+    const totalLen = 6 + dataLen + optLen + 1;
+    if (buf.length < i + totalLen) continue;
+    const dataStart = i + 6;
+    if (crc8(buf.slice(dataStart, dataStart + dataLen + optLen)) !== buf[i + totalLen - 1]) continue;
+    if (type === 0x02 && dataLen >= 5 && buf[dataStart] === 0x00) {
+      const id = buf.slice(dataStart + 1, dataStart + 5);
+      if (!allZero(id)) return fmtId(id);
+    }
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // SERIAL READ / AUTO DETECT HELPERS
 // ─────────────────────────────────────────────────────────────────
@@ -421,6 +612,9 @@ function parseBaseIdFromBuffer(buffer) {
 
   const fam = tryParseEltakoFamUsb(buffer);
   if (fam) return { baseId: fam, parser: 'eltako-fam-usb' };
+
+  const esp3 = tryParseEsp3(buffer);
+  if (esp3) return { baseId: esp3, parser: 'esp3' };
 
   const esp2 = tryParseEsp2(buffer);
   if (esp2) return { baseId: esp2, parser: 'esp2' };
@@ -432,6 +626,7 @@ function buildCommandForProtocol(protocol) {
   if (protocol === 'fam14-memory') return [buildEltakoBusLock(), buildFam14MemoryBaseIdRequest()];
   if (protocol === 'esp2-fam-usb') return buildFamUsbRdIdBase();
   if (protocol === 'esp2') return buildEsp2RdIdBase();
+  if (protocol === 'esp3') return buildEsp3RdIdBase();
   return null;
 }
 
@@ -533,7 +728,8 @@ function readBaseIdFromPort(portPath, baudRate, protocol, options = {}) {
   });
 }
 
-function guessGatewayType(candidate) {
+function guessGatewayType(candidate, manufacturer = '') {
+  const m = manufacturer.toLowerCase();
   if (candidate.protocol === 'fam14-memory') return 'fam14';
   if (candidate.protocol === 'esp2-fam-usb') return 'fam-usb';
   if (candidate.protocol === 'esp2') return candidate.baudRate === 57600 ? 'fgw14usb' : 'fam-usb';
@@ -558,6 +754,8 @@ function makeCandidatesForPort(portInfo) {
   if (m.includes('ftdi') || m.includes('eltako') || m.includes('fam') || m.includes('fgw')) {
     add(9600, 'esp2-fam-usb', 'Eltako FAM-USB');
     add(57600, 'esp2', 'Eltako FAM14/FGW14-USB');
+  }
+  if (m.includes('enocean') || m.includes('usb') || m.includes('serial') || m.includes('com')) {
   }
 
   add(9600, 'fam14-memory', 'Eltako FAM14 Base-ID aus Speicher');
@@ -1317,67 +1515,23 @@ ipcMain.handle('learn-device-id', async (_, portPath, gatewayType, timeoutMs) =>
 
 ipcMain.handle('read-base-id', async (_, portPath, baudRate, protocol) => {
   const proto = protocol || 'esp2';
-
   if (proto === 'fam14-python' || proto === 'eltakobus-fam14' || proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb' || proto === 'fgw14-python') {
     const isFamUsb = proto === 'fam-usb-python' || proto === 'eltakobus-fam-usb';
     const isFgw14 = proto === 'fgw14-python';
     const detectorMode = isFgw14 ? 'fgw14' : (isFamUsb ? 'fam-usb' : 'fam14');
     const expectedType = isFgw14 ? 'fgw14usb' : (isFamUsb ? 'fam-usb' : 'fam14');
     const py = await runPythonDetector(portPath || '', detectorMode);
-
     if (py.ok && py.gateway) {
       const detectedType = py.gateway.type || expectedType;
       rememberBusConnection(py.gateway.serial_path || portPath, detectedType, py.gateway.baudRate || 57600);
-
-      if (py.gateway.base_id) {
-        return {
-          ok: true,
-          baseId: py.gateway.base_id,
-          gatewayType: detectedType,
-          protocol: py.gateway.protocol,
-          parser: py.gateway.parser,
-          baudRate: py.gateway.baudRate,
-          portPath: py.gateway.serial_path,
-          bridge: 'python',
-        };
-      }
-
-      if (detectedType === 'fgw14usb') {
-        return {
-          ok: true,
-          baseId: '',
-          gatewayType: 'fgw14usb',
-          detectedWithoutBaseId: true,
-          protocol: py.gateway.protocol,
-          parser: py.gateway.parser,
-          baudRate: py.gateway.baudRate,
-          portPath: py.gateway.serial_path,
-          bridge: 'python',
-        };
-      }
+      if (py.gateway.base_id) return { ok:true, baseId:py.gateway.base_id, gatewayType:detectedType, protocol:py.gateway.protocol, parser:py.gateway.parser, baudRate:py.gateway.baudRate, portPath:py.gateway.serial_path, bridge:'python' };
+      if (detectedType === 'fgw14usb') return { ok:true, baseId:'', gatewayType:'fgw14usb', detectedWithoutBaseId:true, protocol:py.gateway.protocol, parser:py.gateway.parser, baudRate:py.gateway.baudRate, portPath:py.gateway.serial_path, bridge:'python' };
     }
-
-    return {
-      ok: false,
-      error: py.error || (isFgw14
-        ? 'FGW14-USB konnte auf dem angegebenen Port nicht erkannt werden.'
-        : (isFamUsb ? 'FAM-USB-Erkennung lieferte keine Base-ID.' : 'FAM14-Erkennung lieferte keine Base-ID.')),
-      attempts: py.attempts || [],
-      bridge: 'python',
-    };
+    return { ok:false, error:py.error || (isFgw14 ? 'FGW14-USB konnte auf dem angegebenen Port nicht erkannt werden.' : 'Die Gateway-Erkennung lieferte keine Base-ID.'), attempts:py.attempts || [], bridge:'python' };
   }
-
-  const result = await readBaseIdFromPort(portPath, baudRate || 57600, proto, { timeoutMs: 1800, retries: 3 });
+  const result = await readBaseIdFromPort(portPath, baudRate || 57600, proto, { timeoutMs:1800, retries:3 });
   if (result.ok) return result;
-  return {
-    ok: false,
-    error: `${result.error}
-Port: ${portPath}
-Baudrate: ${baudRate || 57600}
-Protokoll: ${proto}`,
-    txFrames: result.txFrames || [],
-    rxFrames: result.rxFrames || [],
-  };
+  return { ok:false, error:`${result.error}\nPort: ${portPath}\nBaudrate: ${baudRate || 57600}\nProtokoll: ${proto}`, txFrames:result.txFrames || [], rxFrames:result.rxFrames || [] };
 });
 
 ipcMain.handle('detect-gateway', async (_, preferredPath) => {
@@ -1435,7 +1589,15 @@ ipcMain.handle('write-sender-ids-to-devices', async (_, payload) => {
 });
 
 
-app.whenReady().then(createWindow);
+
+process.on('uncaughtException', error => console.error('[uncaughtException]', error));
+process.on('unhandledRejection', error => console.error('[unhandledRejection]', error));
+
+app.whenReady().then(async () => {
+  currentLanguage = await loadLanguage();
+  buildApplicationMenu();
+  createWindow();
+});
 app.on('before-quit', () => {
   if (lastBusDisconnectInfo) {
     // Best-effort: explicit UI disconnect is preferred, but this sends an RS485

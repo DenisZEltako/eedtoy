@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getStoredLanguage, storeLanguage, translate, translateDeviceLabel, translateGroup, translatePlatform, translateRuntimeText } from "./i18n.js";
 
-const APP_VERSION = "1.0.82";
+const APP_VERSION = "1.0.93";
 
 // ─────────────────────────────────────────────────────────────────
 // EEP Database — Eltako Home Assistant Integration
@@ -9,28 +10,23 @@ const EEP_DB = {
   // ── Taster / Schalter ────────────────────────────────────────
   "F6-02-01-2CH": { group:"Taster / Schalter", label:"F2T55 – Taster 2-Kanal EU (F6-02-01)", platform:"binary_sensor", eep_out:"F6-02-01", eltako:"F2T55 2-Kanal" },
   "F6-02-01-4CH": { group:"Taster / Schalter", label:"FT55, F4T55E – Taster 4-Kanal EU (F6-02-01)", platform:"binary_sensor", eep_out:"F6-02-01", eltako:"FT55, F4T55E 4-Kanal" },
-  "F6-02-02": { group:"Taster / Schalter", label:"Taster 2-Kanal (F6-02-02)", platform:"binary_sensor", eltako:"Taster 2-Kanal" },
   "F6-01-01": { group:"Taster / Schalter", label:"FNSN55EB, FNS65EB – Näherungsschalter (F6-01-01)", platform:"binary_sensor", device_classes:["presence"], default_dc:"presence", eltako:"FNSN55EB, FNS65EB" },
 
   // ── Kontakte ──────────────────────────────────────────────────
-  "D5-00-01": { group:"Kontakt", label:"FTK, FTKB, FFKB, FFTE – Fenster-/Türkontakt (D5-00-01)", platform:"binary_sensor", device_classes:["window","door","opening"], default_dc:"window", eltako:"FTK, FTKB, FFKB, FFTE" },
-  "F6-10-00": { group:"Kontakt", label:"FTKE, FFG7B – Fensterkontakt / Fenstergriff (F6-10-00)", platform:"binary_sensor", device_classes:["opening","window"], default_dc:"opening", eltako:"FTKE, FFG7B" },
+  "D5-00-01": { group:"Kontakt", label:"FTK, FTKB, FFKB – Fenster-/Türkontakt (D5-00-01)", platform:"binary_sensor", device_classes:["window","door","opening"], default_dc:"window", eltako:"FTK, FTKB, FFKB" },
+  "F6-10-00-FFG7B": { group:"Kontakt", label:"FTKE, FFTE, FFG7B – Fensterkontakt / Fenstergriff (F6-10-00)", platform:"sensor", eep_out:"F6-10-00", ffg7b_three_state:true, eltako:"FTKE, FFTE, FFG7B" },
+  "A5-14-09-FFG7B": { group:"Kontakt", label:"FFG7B – Fensterkontakt / Fenstergriff (A5-14-09)", platform:"sensor", eep_out:"A5-14-09", ffg7b_three_state:true, eltako:"FFG7B" },
 
   // ── Bewegungsmelder ───────────────────────────────────────────
-  "A5-07-01": { group:"Bewegungsmelder", label:"FBH55ESB, FB55EB / FBHT55ESB – TF-Modus: Bewegungserkennung (A5-07-01)", platform:"binary_sensor", eep_out:"A5-07-01", device_classes:["motion","occupancy"], default_dc:"motion", eltako:"FBH55ESB, FB55EB, FBHT55ESB" },
-  "A5-08-01-FBH": { group:"Bewegungsmelder", label:"FBH55ESB, FB55EB – FBH-Modus: Spannung + Helligkeit + Bewegung (A5-08-01)", platform:"sensor", eep_out:"A5-08-01", eltako:"FBH55ESB" },
-  "A5-08-01-FBHT": { group:"Bewegungsmelder", label:"FBHT55ESB – FBH-Modus: Spannung + Helligkeit + Temperatur + Bewegung (A5-08-01)", platform:"sensor", eep_out:"A5-08-01", eltako:"FBHT55ESB", fbht_temperature:true },
-  "F6-02-01-FABH130-230V": { group:"Bewegungsmelder", label:"FABH130/230V – Bewegungsmelder (F6-02-01)", platform:"binary_sensor", eep_out:"F6-02-01", device_classes:["motion","occupancy"], default_dc:"motion", eltako:"FABH130/230V" },
+  "A5-07-01": { group:"Bewegungsmelder", label:"FBH55ESB, FB55EB – Bewegungsmelder (A5-07-01)", platform:"binary_sensor", eep_out:"A5-07-01", device_classes:["motion","occupancy"], default_dc:"motion", eltako:"FBH55ESB, FB55EB" },
+  "A5-08-01-FBH-FBHT": { group:"Bewegungsmelder", label:"FBH55ESB / FBHT55ESB – Bewegung + Helligkeit automatisch (A5-08-01)", platform:"sensor", eep_out:"A5-08-01", eltako:"FBH55ESB, FBHT55ESB", fbht_temperature:true },
 
   // ── Rauch / Hitze ─────────────────────────────────────────────
   "A5-30-01": { group:"Rauch / Hitze", label:"FRWB – Rauchmelder (A5-30-01)", platform:"binary_sensor", device_classes:["smoke"], default_dc:"smoke", eltako:"FRWB" },
   "A5-30-03": { group:"Rauch / Hitze", label:"FHMB – Rauch-/Hitzemelder (A5-30-03)", platform:"binary_sensor", device_classes:["smoke","heat"], default_dc:"smoke", eltako:"FHMB" },
 
   // ── Temperatur / Feuchte ──────────────────────────────────────
-  "A5-04-01": { group:"Temperatur / Feuchte", label:"FFTSB, FFT60SB – Temperatur + Feuchte 0…40 °C (A5-04-01)", platform:"sensor", eltako:"FFTSB, FFT60SB" },
-  "A5-04-02": { group:"Temperatur / Feuchte", label:"FFT65B – Temperatur + Feuchte −20…60 °C (A5-04-02)", platform:"sensor", eltako:"FFT65B" },
-  "A5-04-02-FTFSB": { group:"Temperatur / Feuchte", label:"FTFSB – A5-04-02: Feuchte DB2, Temperatur DB1 (Lerntelegramm 10-10-0D-87)", platform:"sensor", eep_out:"A5-04-02", eltako:"FTFSB" },
-  "A5-04-03-FTFSB": { group:"Temperatur / Feuchte", label:"FTFSB – A5-04-03: Feuchte DB3, Temperatur 10 Bit DB2/DB1 (Lerntelegramm 10-18-0D-80)", platform:"sensor", eep_out:"A5-04-03", eltako:"FTFSB" },
+  "A5-04-01": { group:"Temperatur / Feuchte", label:"FFT60SB – Temperatur + Feuchte 0…40 °C (A5-04-01)", platform:"sensor", eltako:"FFT60SB" },
   "A5-04-02-FLGTF": { group:"Temperatur / Feuchte", label:"FLGTF – Temperatur + Feuchte −20…60 °C / 0…100 % (A5-04-02)", platform:"sensor", eep_out:"A5-04-02", eltako:"FLGTF" },
 
   // ── Luftqualität ──────────────────────────────────────────────
@@ -41,9 +37,16 @@ const EEP_DB = {
   "A5-10-06": { group:"Raumregler / Klima", label:"FUTH65D / FHK14 / F4HK14 / FAE14SSR – Heizung/Klima Temperatur + Sollwert + Fan (A5-10-06)", platform:"climate", needs_sender:true, sender_eep:"A5-10-06", eltako:"FUTH65D, FHK14, F4HK14, FAE14SSR" },
   "A5-10-10": { group:"Raumregler / Klima", label:"FUTH65D – Raumregler Temperatur + Feuchte + Sollwert (A5-10-10)", platform:"sensor", eltako:"FUTH65D" },
   "A5-10-12": { group:"Raumregler / Klima", label:"FUTH65D – Raumregler Temperatur + Feuchte + Belegung (A5-10-12)", platform:"sensor", eltako:"FUTH65D" },
+  "A5-10-06-FUTH55ED-FHK": { group:"Raumregler / Klima", label:"FUTH55ED – FHK-Datenübermittlung (A5-10-06)", platform:"sensor", eep_out:"A5-10-06", futh55ed_mode:"fhk", teach_in_telegram:"40-30-0D-87", eltako:"FUTH55ED" },
+  "A5-20-01-FUTH55ED-FKS-KP": { group:"Raumregler / Klima", label:"FUTH55ED – FKS Kieback & Peter (A5-20-01)", platform:"sensor", eep_out:"A5-20-01", futh55ed_mode:"fks_kp", bidirectional:true, eltako:"FUTH55ED" },
+  "A5-20-04-FUTH55ED-FKS-HORA": { group:"Raumregler / Klima", label:"FUTH55ED – FKS-H Hora (A5-20-04)", platform:"sensor", eep_out:"A5-20-04", futh55ed_mode:"fks_hora", bidirectional:true, eltako:"FUTH55ED" },
+  "A5-38-08-FUTH55ED-TF61R": { group:"Raumregler / Klima", label:"FUTH55ED – 2-Punkt-Regler TF61R / FR62 (A5-38-08)", platform:"binary_sensor", eep_out:"A5-38-08", futh55ed_mode:"two_point", teach_in_telegram:"E0-40-0D-80", eltako:"FUTH55ED" },
+  "A5-10-06-FTR-FHK": { group:"Raumregler / Klima", label:"FTR55/65-Familie – Betriebsart FHK: Soll- und Isttemperatur (A5-10-06)", platform:"sensor", eep_out:"A5-10-06", room_controller_mode:"fhk", teach_in_telegram:"40-30-0D-87", min_target_temperature:12, max_target_temperature:28, frost_temperature:8, eltako:"FTR65DSB, FTR55DSB, FTR55EHB, FTR55ESB, FTR65HB, FTRF65HB, FTR55HB, FTR65SB, FTRF65SB, FTR55SB" },
+  "A5-38-08-FTR-TF61": { group:"Raumregler / Klima", label:"FTR55/65-Familie – Betriebsart TF61: Heizanforderung EIN/AUS (A5-38-08)", platform:"binary_sensor", eep_out:"A5-38-08", room_controller_mode:"tf61", teach_in_telegram:"E0-40-0D-80", hysteresis:1, eltako:"FTR65DSB, FTR55DSB, FTR55EHB, FTR55ESB, FTR65HB, FTRF65HB, FTR55HB, FTR65SB, FTRF65SB, FTR55SB" },
+  "A5-10-12-FUTH55ED-HYGROSTAT": { group:"Raumregler / Klima", label:"FUTH55ED – Hygrostat (A5-10-12)", platform:"sensor", eep_out:"A5-10-12", futh55ed_mode:"hygrostat", teach_in_telegram:"40-90-0D-80", eltako:"FUTH55ED" },
 
   // ── Heizung / Stellantrieb ───────────────────────────────────
-  "A5-20-01-FKS-SV": { group:"Heizung / Stellantrieb", label:"FKS-SV – Funk-Klein-Stellantrieb Smart Valve (A5-20-01)", platform:"climate", needs_sender:true, sender_eep:"A5-20-01", eep_out:"A5-20-01", eltako:"FKS-SV" },
+  "A5-20-01-FKS-SV": { group:"Heizung / Stellantrieb", label:"FKS-SV – Smart Valve / Heizkörper-Stellantrieb (A5-20-01)", platform:"climate", needs_sender:true, sender_eep:"A5-20-01", eep_out:"A5-20-01", fks_sv_device:true, eltako:"FKS-SV" },
 
   // ── Zähler ────────────────────────────────────────────────────
   "A5-12-01": { group:"Zähler", label:"FWZ12, FWZ14, DSZ14 – Funk-/Wechselstromzähler kWh (A5-12-01)", platform:"sensor", eltako:"FWZ12, FWZ14, DSZ14" },
@@ -54,6 +57,7 @@ const EEP_DB = {
 
   // ── Licht / Dimmer ────────────────────────────────────────────
   "A5-38-08-FUD14": { group:"Licht / Dimmer", label:"FUD14 – Dimmaktor (A5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"A5-38-08", eltako:"FUD14" },
+  "A5-38-08-FDG14": { group:"Licht / Dimmer", label:"FDG14 – DALI-Gateway / Dimmaktor (A5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"A5-38-08", dimming_speed:0, eltako:"FDG14" },
   "A5-38-08-FUD71": { group:"Licht / Dimmer", label:"FUD71 – Dimmaktor (A5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"A5-38-08", eltako:"FUD71" },
   "A5-38-08-FD2G14": { group:"Licht / Dimmer", label:"FD2G14 – DALI-Gateway (A5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"A5-38-08", eltako:"FD2G14" },
   "A5-38-08-FUD61NP-230V": { group:"Licht / Dimmer", label:"FUD61NP-230V – Dimmaktor (A5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"A5-38-08", eltako:"FUD61NP-230V" },
@@ -64,14 +68,12 @@ const EEP_DB = {
   // ── Licht / RGBW ──────────────────────────────────────────────
   "07-37-F7-FRGBW14": { group:"Licht / RGBW", label:"FRGBW14 – RGBW/Farbsteuerung freies Profil (07-37-F7)", platform:"light", needs_sender:true, sender_eep:"07-37-F7", eep_out:"07-37-F7", eltako:"FRGBW14", rgbw:true },
   "07-37-F7-FRGBW71L": { group:"Licht / RGBW", label:"FRGBW71L – RGBW/Farbsteuerung freies Profil (07-37-F7)", platform:"light", needs_sender:true, sender_eep:"07-37-F7", eep_out:"07-37-F7", eltako:"FRGBW71L", rgbw:true },
-  "07-37-F7-FWKKW71L": { group:"Licht / RGBW", label:"FWKKW71L – RGBW/Farbsteuerung freies Profil (07-37-F7)", platform:"light", needs_sender:true, sender_eep:"07-37-F7", eep_out:"07-37-F7", eltako:"FWKKW71L", rgbw:true },
 
   // ── Licht / Relais ────────────────────────────────────────────
-  "M5-38-08-FSR14-2X": { group:"Licht / Relais", label:"FSR14_2x – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR14_2x" },
-  "M5-38-08-FSR14-4X": { group:"Licht / Relais", label:"FSR14_4x – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR14_4x" },
+  "M5-38-08-FSR14-2X": { group:"Licht / Relais", label:"FSR14-2x – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR14-2x" },
+  "M5-38-08-FSR14-4X": { group:"Licht / Relais", label:"FSR14-4x – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR14-4x" },
   "M5-38-08-FSR71-2X-230V": { group:"Licht / Relais", label:"FSR71-2x-230V – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR71-2x-230V" },
   "M5-38-08-FSR71NP-2X-230V": { group:"Licht / Relais", label:"FSR71NP-2x-230V – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR71NP-2x-230V" },
-  "M5-38-08-FSR71-4X-230V": { group:"Licht / Relais", label:"FSR71-4x-230V – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR71-4x-230V" },
   "M5-38-08-FSR71NP-4X-230V": { group:"Licht / Relais", label:"FSR71NP-4x-230V – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR71NP-4x-230V" },
   "M5-38-08-FMZ14": { group:"Licht / Relais", label:"FMZ14 – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"F6-02-01", eep_out:"M5-38-08", eltako:"FMZ14" },
   "M5-38-08-FSR61-230V": { group:"Licht / Relais", label:"FSR61-230V – Relais/Lichtaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSR61-230V" },
@@ -84,11 +86,6 @@ const EEP_DB = {
   "M5-38-08-FR62NP-230V": { group:"Licht / Relais", label:"FR62NP-230V – Relais/Steckdosenaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FR62NP-230V" },
   "M5-38-08-FL62-230V": { group:"Licht / Relais", label:"FL62-230V – Relais/Steckdosenaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FL62-230V" },
   "M5-38-08-FL62NP-230V": { group:"Licht / Relais", label:"FL62NP-230V – Relais/Steckdosenaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FL62NP-230V" },
-  "M5-38-08-FSSA-230V": { group:"Licht / Relais", label:"FSSA-230V – Relais/Steckdosenaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSSA-230V" },
-  "M5-38-08-FSVA-230V-10A": { group:"Licht / Relais", label:"FSVA-230V-10A – Relais/Steckdosenaktor (M5-38-08)", platform:"light", needs_sender:true, sender_eep:"A5-38-08", eep_out:"M5-38-08", eltako:"FSVA-230V-10A" },
-
-  // ── Schalter ─────────────────────────────────────────────────
-  "A5-12-01-FSS12-12VDC": { group:"Zähler", label:"FSS12-12V DC – Zählerstand + Augenblicksleistung (A5-12-01)", platform:"sensor", eep_out:"A5-12-01", meter_tariffs:"[1]", eltako:"FSS12-12V DC" },
 
   // ── Jalousie / Rollladen ──────────────────────────────────────
   "G5-3F-7F-FSB14": { group:"Jalousie / Rollladen", label:"FSB14, FSB14/12-24V DC – Jalousie / Rollladen (G5-3F-7F)", platform:"cover", needs_sender:true, sender_eep:"H5-3F-7F", eep_out:"G5-3F-7F", device_classes:["shutter","blind","awning","curtain"], default_dc:"shutter", eltako:"FSB14, FSB14/12-24V DC" },
@@ -119,10 +116,11 @@ const GENERIC_EEP_PROFILES = {
   "A5-09-0C": { platform:"sensor", needs_sender:false, eep_out:"A5-09-0C" },
   "A5-09-04": { platform:"sensor", needs_sender:false, eep_out:"A5-09-04" },
   "A5-04-02": { platform:"sensor", needs_sender:false, eep_out:"A5-04-02" },
-  "A5-04-03": { platform:"sensor", needs_sender:false, eep_out:"A5-04-03" },
   "A5-07-01": { platform:"binary_sensor", needs_sender:false, eep_out:"A5-07-01", default_dc:"motion" },
   "A5-08-01": { platform:"sensor", needs_sender:false, eep_out:"A5-08-01" },
   "A5-20-01": { platform:"climate", needs_sender:true, sender_eep:"A5-20-01", eep_out:"A5-20-01" },
+  "A5-20-04": { platform:"sensor", needs_sender:false, eep_out:"A5-20-04" },
+  "A5-14-09": { platform:"sensor", needs_sender:false, eep_out:"A5-14-09", ffg7b_three_state:true },
   "07-37-F7": { platform:"light", needs_sender:true, sender_eep:"07-37-F7", eep_out:"07-37-F7" },
 };
 
@@ -184,12 +182,18 @@ function normalizeId(id) {
 }
 
 function isFksSvDevice(device) {
-  return exportEepForDevice(device) === "A5-20-01" || String(device?.name || "").toUpperCase().includes("FKS-SV");
+  const profile = profileFor(device?.eep);
+  return Boolean(profile.fks_sv_device || String(device?.name || "").toUpperCase().includes("FKS-SV"));
 }
 
 function isFbhOperatingMode(device) {
   const eep = exportEepForDevice(device);
   return eep === "A5-07-01" || eep === "A5-08-01";
+}
+
+function isRoomControllerOperatingMode(device) {
+  const profile = profileFor(device?.eep);
+  return Boolean(profile.room_controller_mode || profile.futh55ed_mode);
 }
 
 function duplicateDeviceKey(device) {
@@ -199,7 +203,9 @@ function duplicateDeviceKey(device) {
   // A5-07-01 (TF mode) and A5-08-01 (FBH mode) are mutually exclusive
   // operating modes of the same FBH55ESB/FBHT55ESB transmitter. Exporting
   // both for one physical ID makes the integration lookup ambiguous.
-  return isFbhOperatingMode(device) ? `${id}|FBH-BETRIEBSART` : `${id}|${eep}`;
+  if (isFbhOperatingMode(device)) return `${id}|FBH-BETRIEBSART`;
+  if (isRoomControllerOperatingMode(device)) return `${id}|RAUMREGLER-BETRIEBSART`;
+  return `${id}|${eep}`;
 }
 
 function deduplicateExportDevices(devices) {
@@ -332,7 +338,7 @@ function expandFlgtfExportDevices(devices) {
 }
 
 // ─── YAML Generator — grimmpp eltako: format ─────────────────────
-function generateYaml(gateway, devices, extraGateways = [], pct14BaseId = "") {
+function generateYaml(gateway, devices, extraGateways = [], pct14BaseId = "", language = "de") {
   if (!devices.length) return "";
   const deduplication = deduplicateExportDevices(devices);
   const exportDevices = expandFlgtfExportDevices(deduplication.devices);
@@ -347,7 +353,9 @@ function generateYaml(gateway, devices, extraGateways = [], pct14BaseId = "") {
   out += `# EEDTOY – ELTAKO EnOcean Device to YAML Generator\n`;
   out += `# Author: D. Zirnbauer\n`;
   out += `# Version: ${APP_VERSION}\n`;
-  out += `# Generiert: ${new Date().toLocaleString("de-DE")}\n`;
+  const generatedLabel = language === "en" ? "Generated" : "Generiert";
+  const generatedLocale = language === "en" ? "en-GB" : "de-DE";
+  out += `# ${generatedLabel}: ${new Date().toLocaleString(generatedLocale)}\n`;
   out += `# Home Assistant ELTAKO YAML Export\n`;
   out += `# ============================================================\n\n`;
 
@@ -379,9 +387,24 @@ function generateYaml(gateway, devices, extraGateways = [], pct14BaseId = "") {
         out += `        eep: "${eepOut}"\n`;
         out += `        name: "${d.name}"\n`;
         if (p.fbht_temperature) out += `        fbht_temperature: true\n`;
+        if (p.ffg7b_three_state) out += `        ffg7b_three_state: true\n`;
+        if (p.futh55ed_mode) out += `        futh55ed_mode: "${p.futh55ed_mode}"\n`;
+        if (p.room_controller_mode) out += `        room_controller_mode: "${p.room_controller_mode}"\n`;
+        if (p.teach_in_telegram) out += `        teach_in_telegram: "${p.teach_in_telegram}"\n`;
+        if (p.hysteresis != null) out += `        hysteresis: ${p.hysteresis}\n`;
+        if (p.frost_temperature != null) out += `        frost_temperature: ${p.frost_temperature}\n`;
+        if (p.dimming_speed != null) out += `        dimming_speed: ${p.dimming_speed}\n`;
+        if (p.room_controller_mode && p.min_target_temperature != null) out += `        min_target_temperature: ${p.min_target_temperature}\n`;
+        if (p.room_controller_mode && p.max_target_temperature != null) out += `        max_target_temperature: ${p.max_target_temperature}\n`;
+        if (p.bidirectional) out += `        bidirectional: true\n`;
         if (isRgbwDevice(d)) {
-          out += `        # FRGBW-Statussync: HA-Sender-ID in den Aktor schreiben und eingehende 07-37-F7-Bustelegramme in der HA-Integration auswerten.\n`;
-          out += `        # Dadurch bleiben Eltako-GFA5-App und Home Assistant statusseitig synchron.\n`;
+          if (language === "en") {
+            out += `        # FRGBW status sync: write the HA sender ID to the actuator and process incoming 07-37-F7 bus telegrams in the HA integration.\n`;
+            out += `        # This keeps the ELTAKO GFA5 app and Home Assistant synchronized.\n`;
+          } else {
+            out += `        # FRGBW-Statussync: HA-Sender-ID in den Aktor schreiben und eingehende 07-37-F7-Bustelegramme in der HA-Integration auswerten.\n`;
+            out += `        # Dadurch bleiben Eltako-GFA5-App und Home Assistant statusseitig synchron.\n`;
+          }
         }
         // Die Grimm-Integration erwartet hier keine freie comment-Eigenschaft.
         // Zur Nachvollziehbarkeit bleibt sie als YAML-Kommentar erhalten.
@@ -421,9 +444,9 @@ function generateYaml(gateway, devices, extraGateways = [], pct14BaseId = "") {
 }
 
 const GATEWAY_TYPES = [
-  { value:"fam-usb",  label:"Eltako FAM-USB",  desc:"ESP2 · 9600 baud · Wireless", has_base_id:true, has_serial:true, has_lan:false, baud:9600, proto:"fam-usb-python" },
-  { value:"fam14",    label:"Eltako FAM14",     desc:"Eltakobus · RS485 Bus · 57600 baud", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"fam14-python" },
-  { value:"fgw14usb", label:"Eltako FGW14-USB", desc:"ESP2 · RS485 Bus · 57600 baud", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"fgw14-python" },
+  { value:"fam-usb",  label:"Eltako FAM-USB",  descKey:"gateway.desc.famUsb", has_base_id:true, has_serial:true, has_lan:false, baud:9600, proto:"fam-usb-python" },
+  { value:"fam14",    label:"Eltako FAM14",     descKey:"gateway.desc.fam14", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"fam14-python" },
+  { value:"fgw14usb", label:"Eltako FGW14-USB", descKey:"gateway.desc.fgw14Usb", has_base_id:true, has_serial:true, has_lan:false, baud:57600, proto:"fgw14-python" },
 ];
 
 
@@ -460,7 +483,7 @@ function addressFromBusId(id) {
 }
 
 function isPct14ImportedDevice(device) {
-  return String(device?.room || "").includes("PCT14 Adresse");
+  return /PCT14\s+(Adresse|address)\b/i.test(String(device?.room || ""));
 }
 
 function deviceIdForGateway(device, gw, pct14BaseId) {
@@ -548,6 +571,7 @@ function getPct14Mapping(modelName) {
   if (name.startsWith("FGW14")) return { gateway:"fgw14usb" };
   if (name.startsWith("FSB14")) return { eep:"G5-3F-7F", platform:"cover", time_opens:"25", time_closes:"25" };
   if (name.startsWith("FD2G14")) return { eep:"A5-38-08", platform:"light", dali:true };
+  if (name.startsWith("FDG14")) return { eep:"A5-38-08-FDG14", platform:"light", dali:true };
   if (name.startsWith("FRGBW14") || name.startsWith("FRGBW71")) return { eep:"07-37-F7", platform:"light", sender_eep:"07-37-F7", channels:1, rgbw:true };
   if (name.startsWith("FUD14")) return { eep:"A5-38-08", platform:"light" };
   if (name.startsWith("F4SR14")) return { eep:"M5-38-08", platform:"light" };
@@ -560,21 +584,21 @@ function getPct14Mapping(modelName) {
   return null;
 }
 
-function normalizePct14ModelName(modelName) {
+function normalizePct14ModelName(modelName, language = "de") {
   const upper = String(modelName || "").toUpperCase();
-  if (upper.startsWith("FSR14-4") || upper.startsWith("FSR14_4")) return "FSR14_4X";
-  if (upper.startsWith("FSR14-2") || upper.startsWith("FSR14_2")) return "FSR14_2X";
+  if (upper.startsWith("FSR14-4") || upper.startsWith("FSR14_4")) return "FSR14-4x";
+  if (upper.startsWith("FSR14-2") || upper.startsWith("FSR14_2")) return "FSR14-2x";
   if (upper.startsWith("FSR14-1") || upper.startsWith("FSR14_1")) return "FSR14_1X";
   if (upper.startsWith("F4SR14")) return "F4SR14_LED";
   if (upper.startsWith("FWG14MS")) return "FWG14MS";
   if (upper.startsWith("F3Z14D")) return "F3Z14D";
-  return modelName || "Gerät";
+  return modelName || (language === "en" ? "Device" : "Gerät");
 }
 
-function parsePct14Xml(text, currentBaseId = "", options = {}) {
+function parsePct14Xml(text, currentBaseId = "", options = {}, language = "de") {
   const doc = new DOMParser().parseFromString(text, "application/xml");
   const parserError = doc.querySelector("parsererror");
-  if (parserError) throw new Error("Die Datei ist keine gültige PCT14-XML-Datei.");
+  if (parserError) throw new Error(language === "en" ? "The file is not a valid PCT14 XML file." : "Die Datei ist keine gültige PCT14-XML-Datei.");
 
   const rootBase = doc.querySelector("rootdevice rootdevicedata baseid");
   const baseId = rootBase ? idFromBytes([
@@ -605,7 +629,7 @@ function parsePct14Xml(text, currentBaseId = "", options = {}) {
     // mapping.channels zugegriffen, obwohl mapping bei unbekannten Geräten null
     // sein kann. Das führte zu: Cannot read properties of null (reading 'channels').
     if (!mapping) {
-      unsupported.push(model || `Adresse ${address}`);
+      unsupported.push(model || `${language === "en" ? "Address" : "Adresse"} ${address}`);
       continue;
     }
 
@@ -654,14 +678,14 @@ function parsePct14Xml(text, currentBaseId = "", options = {}) {
 
       imported.push({
         ...emptyForm,
-        name: channelDesc || `${normalizePct14ModelName(model)} ${devId}${channelCount > 1 ? ` (${channelNumber}/${channelCount})` : ""}`,
+        name: channelDesc || `${normalizePct14ModelName(model, language)} ${devId}${channelCount > 1 ? ` (${channelNumber}/${channelCount})` : ""}`,
         dev_id: devId,
         eep: mapping.eep,
         platform: mapping.platform,
-        device_type: normalizePct14ModelName(model),
-        model: normalizePct14ModelName(model),
-        eltako: normalizePct14ModelName(model),
-        room: `PCT14 Adresse ${address}${channelCount > 1 ? ` · Kanal ${channelNumber}` : ""}${mapping.dali ? " · DALI-Gateway" : ""}${mapping.rgbw ? " · RGBW-Profil" : ""}`,
+        device_type: normalizePct14ModelName(model, language),
+        model: normalizePct14ModelName(model, language),
+        eltako: normalizePct14ModelName(model, language),
+        room: `PCT14 ${language === "en" ? "address" : "Adresse"} ${address}${channelCount > 1 ? ` · ${language === "en" ? "Channel" : "Kanal"} ${channelNumber}` : ""}${mapping.dali ? ` · ${language === "en" ? "DALI gateway" : "DALI-Gateway"}` : ""}${mapping.rgbw ? ` · ${language === "en" ? "RGBW profile" : "RGBW-Profil"}` : ""}`,
         sender_id: senderId,
         sender_eep: mapping.sender_eep ?? p.sender_eep ?? "",
         device_class: mapping.platform === "cover" ? "shutter" : "",
@@ -719,6 +743,11 @@ export default function App() {
   const [writeSenderLog, setWriteSenderLog] = useState([]);
   const [projectMsg, setProjectMsg] = useState("");
   const [projectFileName, setProjectFileName] = useState("");
+  const [projectFilePath, setProjectFilePath] = useState("");
+  const [language, setLanguage] = useState(getStoredLanguage);
+  const t = (key, variables = {}) => translate(language, key, variables);
+  const runtimeText = (value) => translateRuntimeText(language, value);
+  const projectActionsRef = useRef({ open: null, save: null, saveAs: null });
 
   const isElectron = typeof window !== "undefined" && window.electronAPI?.isElectron;
 
@@ -750,14 +779,30 @@ export default function App() {
     if (timeout > 0) setTimeout(() => setProjectMsg(""), timeout);
   };
 
+  const handleSaveProject = async () => {
+    if (!isElectron) {
+      showProjectMessage(t("project.desktopSaveOnly"));
+      return;
+    }
+    if (!projectFilePath) return handleSaveProjectAs();
+    const result = await window.electronAPI.saveProject({ project: buildProjectDocument(), path: projectFilePath });
+    if (result?.needsSaveAs) return handleSaveProjectAs();
+    if (!result?.ok) {
+      showProjectMessage(t("project.saveFailed", { error: runtimeText(result?.error || t("project.unknownError")) }));
+      return;
+    }
+    setProjectFileName(result.fileName || projectFileName);
+    showProjectMessage(t("project.saved", { file: result.fileName || result.path }));
+  };
+
   const handleSaveProjectAs = async () => {
     if (!isElectron) {
-      showProjectMessage("✗ Projektdateien können nur in der installierten EEDTOY-Desktop-App gespeichert werden.");
+      showProjectMessage(t("project.desktopSaveOnly"));
       return;
     }
     const suggestedName = projectFileName
       ? projectFileName.replace(/\.(eedtoy|json)$/i, "")
-      : `EEDTOY-Projekt-${new Date().toISOString().slice(0, 10)}`;
+      : `EEDTOY-${language === "en" ? "Project" : "Projekt"}-${new Date().toISOString().slice(0, 10)}`;
     const result = await window.electronAPI.saveProjectAs({
       project: buildProjectDocument(),
       suggestedName,
@@ -765,45 +810,63 @@ export default function App() {
     });
     if (result?.canceled) return;
     if (!result?.ok) {
-      showProjectMessage(`✗ Projekt konnte nicht gespeichert werden: ${result?.error || "Unbekannter Fehler"}`);
+      showProjectMessage(t("project.saveFailed", { error: runtimeText(result?.error || t("project.unknownError")) }));
       return;
     }
-    setProjectFileName(result.fileName || "EEDTOY-Projekt.eedtoy");
-    showProjectMessage(`✓ Projekt gespeichert: ${result.fileName || result.path}`);
+    setProjectFileName(result.fileName || `EEDTOY-${language === "en" ? "Project" : "Projekt"}.eedtoy`);
+    setProjectFilePath(result.path || "");
+    showProjectMessage(t("project.saved", { file: result.fileName || result.path }));
   };
 
   const handleOpenProject = async () => {
     if (!isElectron) {
-      showProjectMessage("✗ Projektdateien können nur in der installierten EEDTOY-Desktop-App geöffnet werden.");
+      showProjectMessage(t("project.desktopOpenOnly"));
       return;
     }
     const result = await window.electronAPI.openProject();
     if (result?.canceled) return;
     if (!result?.ok) {
-      showProjectMessage(`✗ Projekt konnte nicht geöffnet werden: ${result?.error || "Unbekannter Fehler"}`);
+      showProjectMessage(t("project.openFailed", { error: runtimeText(result?.error || t("project.unknownError")) }));
       return;
     }
 
     const project = result.project || {};
     const state = project.state || {};
+    const loadedGateway = state.gateway && typeof state.gateway === "object" ? { ...emptyGW, ...state.gateway } : emptyGW;
     const loadedDevices = Array.isArray(state.devices) ? state.devices : [];
     const loadedGateways = Array.isArray(state.extraGateways) ? state.extraGateways : [];
+    const loadedImportFam14Gateway = state.importFam14Gateway !== false;
+    const loadedImportFgw14Gateway = state.importFgw14Gateway !== false;
+    const loadedPct14DetectedFam14 = Boolean(state.pct14DetectedFam14);
+    const loadedPct14DetectedFgw14 = Boolean(state.pct14DetectedFgw14);
+    const loadedPct14GatewayBaseId = typeof state.pct14GatewayBaseId === "string" ? state.pct14GatewayBaseId : "";
     const loadedStep = [1, 2, 3].includes(Number(state.step)) ? Number(state.step) : 1;
     const loadedEditIdx = Number.isInteger(state.editIdx) && state.editIdx >= 0 && state.editIdx < loadedDevices.length
       ? state.editIdx
       : null;
 
-    setGateway(state.gateway && typeof state.gateway === "object" ? { ...emptyGW, ...state.gateway } : emptyGW);
+    const activeLoadedGateways = loadedGateways.filter(gw => gw?.source !== "pct14-rootdevice" && gw?.source !== "pct14-fgw14");
+    if (loadedImportFam14Gateway && loadedPct14DetectedFam14 && loadedPct14GatewayBaseId) {
+      activeLoadedGateways.push({ type:"fam14", base_id:loadedPct14GatewayBaseId, source:"pct14-rootdevice" });
+    }
+    if (loadedImportFgw14Gateway && loadedPct14DetectedFgw14 && loadedPct14GatewayBaseId) {
+      activeLoadedGateways.push({ type:"fgw14usb", base_id:loadedPct14GatewayBaseId, source:"pct14-fgw14" });
+    }
+    const loadedYaml = loadedDevices.length > 0
+      ? generateYaml(loadedGateway, loadedDevices, activeLoadedGateways, loadedPct14GatewayBaseId, language)
+      : "";
+
+    setGateway(loadedGateway);
     setDevices(loadedDevices);
     setExtraGateways(loadedGateways);
     setForm(state.form && typeof state.form === "object" ? { ...emptyForm, ...state.form } : emptyForm);
     setEditIdx(loadedEditIdx);
-    setYaml(typeof state.yaml === "string" ? state.yaml : "");
-    setImportFam14Gateway(state.importFam14Gateway !== false);
-    setImportFgw14Gateway(state.importFgw14Gateway !== false);
-    setPct14DetectedFam14(Boolean(state.pct14DetectedFam14));
-    setPct14DetectedFgw14(Boolean(state.pct14DetectedFgw14));
-    setPct14GatewayBaseId(typeof state.pct14GatewayBaseId === "string" ? state.pct14GatewayBaseId : "");
+    setYaml(loadedYaml);
+    setImportFam14Gateway(loadedImportFam14Gateway);
+    setImportFgw14Gateway(loadedImportFgw14Gateway);
+    setPct14DetectedFam14(loadedPct14DetectedFam14);
+    setPct14DetectedFgw14(loadedPct14DetectedFgw14);
+    setPct14GatewayBaseId(loadedPct14GatewayBaseId);
     setWriteBusPort(typeof state.writeBusPort === "string" ? state.writeBusPort : "");
     setWriteTargetGatewayKey(typeof state.writeTargetGatewayKey === "string" ? state.writeTargetGatewayKey : "");
     setErrors({});
@@ -813,14 +876,54 @@ export default function App() {
     setLearnMsg("");
     setWriteSenderMsg("");
     setWriteSenderLog([]);
-    setStep(loadedStep === 3 && !state.yaml ? 2 : loadedStep);
-    setProjectFileName(result.fileName || "EEDTOY-Projekt.eedtoy");
+    setStep(loadedStep === 3 && !loadedYaml ? 2 : loadedStep);
+    setProjectFileName(result.fileName || `EEDTOY-${language === "en" ? "Project" : "Projekt"}.eedtoy`);
+    setProjectFilePath(result.path || "");
 
     const sourceVersion = project.app_version && project.app_version !== APP_VERSION
-      ? ` (erstellt mit v${project.app_version}, in v${APP_VERSION} geöffnet)`
+      ? t("project.versionInfo", { source: project.app_version, current: APP_VERSION })
       : "";
-    showProjectMessage(`✓ Projekt geöffnet: ${result.fileName}${sourceVersion}`, 14000);
+    showProjectMessage(t("project.opened", { file: result.fileName, versionInfo: sourceVersion }), 14000);
   };
+
+  projectActionsRef.current = {
+    open: handleOpenProject,
+    save: handleSaveProject,
+    saveAs: handleSaveProjectAs,
+  };
+
+  useEffect(() => {
+    if (!isElectron) return undefined;
+    let disposed = false;
+
+    window.electronAPI.getLanguage().then((value) => {
+      if (disposed) return;
+      const next = value === "en" ? "en" : "de";
+      setLanguage(next);
+      storeLanguage(next);
+    }).catch(() => {});
+
+    const cleanupMenu = window.electronAPI.onMenuAction((action) => {
+      if (action === "open-project") projectActionsRef.current.open?.();
+      if (action === "save-project") projectActionsRef.current.save?.();
+      if (action === "save-project-as") projectActionsRef.current.saveAs?.();
+    });
+    const cleanupLanguage = window.electronAPI.onLanguageChanged((value) => {
+      const next = value === "en" ? "en" : "de";
+      setLanguage(next);
+      storeLanguage(next);
+    });
+
+    return () => {
+      disposed = true;
+      cleanupMenu?.();
+      cleanupLanguage?.();
+    };
+  }, [isElectron]);
+
+  useEffect(() => {
+    storeLanguage(language);
+  }, [language]);
 
   const handleScanPorts = async () => {
     if (!isElectron) return;
@@ -828,80 +931,75 @@ export default function App() {
     setPorts(found);
     if (found.length > 0) {
       setGateway(g => ({ ...g, serial_path: found[0].path }));
-      setDetectMsg(`✓ ${found.length} serieller Port gefunden: ${found.map(p => p.path).join(', ')}`);
+      setDetectMsg(t(found.length === 1 ? "status.serialPortsFound" : "status.serialPortsFoundPlural", { count: found.length, ports: found.map(p => p.path).join(", ") }));
     } else {
-      setDetectMsg('✗ Kein serieller Port gefunden. Du kannst COM-Port manuell eintippen, z.B. COM3.');
+      setDetectMsg(t("status.noSerialPort"));
     }
     setTimeout(() => setDetectMsg(''), 8000);
   };
 
   const handleDetectBaseId = async () => {
-  if (!isElectron) return;
-  setDetecting(true);
-  setDetectMsg("Verbinde mit Gateway...");
-  const gw = GATEWAY_TYPES.find(g => g.value === gateway.type);
-  const baud = gw?.baud || 57600;
-  const proto = gw?.proto || "auto";
-  const result = await window.electronAPI.readBaseId(gateway.serial_path, baud, proto);
-  setDetecting(false);
-  if (result.ok && result.baseId) {
-    setGateway(g => ({ ...g, base_id: result.baseId, serial_path: result.portPath || g.serial_path }));
-    setDetectMsg(`✓ Base-ID erkannt: ${result.baseId} (${result.protocol || proto}, ${result.baudRate || baud} baud${result.bridge ? ", " + result.bridge : ""})`);
-  } else if (result.ok && (result.gatewayType === "fgw14usb" || result.detectedWithoutBaseId)) {
-    setGateway(g => ({ ...g, type:"fgw14usb", serial_path: result.portPath || g.serial_path }));
-    setDetectMsg(`✓ FGW14-USB erkannt auf ${result.portPath || gateway.serial_path}. Die Base-ID bitte aus PCT14 übernehmen oder manuell eintragen.`);
-  } else {
-    setDetectMsg("✗ " + result.error);
-  }
-  setTimeout(() => setDetectMsg(""), 12000);
-};
+    if (!isElectron) return;
+    setDetecting(true);
+    setDetectMsg(t("status.connectingGateway"));
+    const gw = GATEWAY_TYPES.find(g => g.value === gateway.type);
+    const baud = gw?.baud || 57600;
+    const proto = gw?.proto || 'auto';
+    const result = await window.electronAPI.readBaseId(gateway.serial_path, baud, proto);
+    setDetecting(false);
+    if (result.ok) {
+      setGateway(g => ({ ...g, base_id: result.baseId, serial_path: result.portPath || g.serial_path }));
+      setDetectMsg(t("status.baseIdDetected", { baseId: result.baseId, protocol: result.protocol || proto, baud: result.baudRate || baud, bridge: result.bridge ? `, ${result.bridge}` : "" }));
+    } else {
+      setDetectMsg("✗ " + runtimeText(result.error));
+    }
+    setTimeout(() => setDetectMsg(""), 8000);
+  };
 
   const handleAutoDetectGateway = async () => {
-  if (!isElectron) return;
-  setDetecting(true);
-  setDetectMsg("Suche Gateway auf allen seriellen Ports...");
-  const result = await window.electronAPI.detectGateway(gateway.serial_path);
-  setDetecting(false);
+    if (!isElectron) return;
+    setDetecting(true);
+    setDetectMsg(t("status.detectAllPorts"));
+    const result = await window.electronAPI.detectGateway(gateway.serial_path);
+    setDetecting(false);
 
-  if (result.ports) setPorts(result.ports);
+    if (result.ports) setPorts(result.ports);
 
-  if (result.ok) {
-    const gw = result.gateway;
-    setGateway(g => ({
-      ...g,
-      type: gw.type,
-      serial_path: gw.serial_path,
-      base_id: gw.base_id || g.base_id,
-    }));
-    const baseText = gw.base_id ? `, Base-ID ${gw.base_id}` : "";
-    const baseHint = gw.type === "fgw14usb" && !gw.base_id
-      ? " · Base-ID bitte aus PCT14 übernehmen oder manuell eintragen."
-      : "";
-    setDetectMsg(`✓ Gateway erkannt: ${gw.label} auf ${gw.serial_path}${baseText} (${gw.protocol}, ${gw.baudRate} baud${result.bridge ? ", " + result.bridge : ""})${baseHint}`);
-  } else {
-    const tried = result.attempts?.length ? ` Getestete Varianten: ${result.attempts.length}.` : "";
-    setDetectMsg("✗ " + result.error + tried);
-  }
-  setTimeout(() => setDetectMsg(""), 12000);
-};
+    if (result.ok) {
+      const gw = result.gateway;
+      setGateway(g => ({
+        ...g,
+        type: gw.type,
+        serial_path: gw.serial_path,
+        base_id: gw.base_id,
+      }));
+      setDetectMsg(t("status.gatewayDetected", { label: gw.label, port: gw.serial_path, baseId: gw.base_id, protocol: gw.protocol, baud: gw.baudRate, bridge: result.bridge ? `, ${result.bridge}` : "" }));
+    } else {
+      const tried = result.attempts?.length ? t("status.testedVariants", { count: result.attempts.length }) : "";
+      setDetectMsg("✗ " + runtimeText(result.error) + tried);
+    }
+    setTimeout(() => setDetectMsg(""), 12000);
+  };
+
+
 
   const handleDisconnectGateway = async () => {
     if (!isElectron) return;
     const port = (gateway.serial_path || "").trim();
     if (!port) {
-      setDetectMsg("✗ Kein COM-Port eingetragen. Bitte zuerst den FAM14/FGW14-USB Port auswählen oder eintragen.");
+      setDetectMsg(t("status.disconnectMissingPort"));
       setTimeout(() => setDetectMsg(""), 9000);
       return;
     }
 
     if (!["fam14", "fgw14usb"].includes(gateway.type)) {
-      setDetectMsg("ℹ Für diesen Gateway-Typ ist kein RS485-Bus-Disconnect notwendig. Ein Disconnect ist vor allem für FAM14/FGW14-USB vorgesehen.");
+      setDetectMsg(t("status.disconnectNotNeeded"));
       setTimeout(() => setDetectMsg(""), 9000);
       return;
     }
 
     setDisconnectingGateway(true);
-    setDetectMsg("Trenne RS485-Bus sauber und gebe den COM-Port frei …");
+    setDetectMsg(t("status.disconnecting"));
     const result = await window.electronAPI.disconnectGateway({
       portPath: port,
       gatewayType: gateway.type,
@@ -910,32 +1008,32 @@ export default function App() {
     setDisconnectingGateway(false);
 
     if (result.ok) {
-      setDetectMsg("✓ RS485-Bus wurde sauber freigegeben. COM-Port ist geschlossen.");
+      setDetectMsg(t("status.disconnectSuccess"));
     } else {
-      setDetectMsg("✗ Disconnect fehlgeschlagen: " + (result.error || "Unbekannter Fehler"));
+      setDetectMsg(t("status.disconnectFailed", { error: runtimeText(result.error || t("project.unknownError")) }));
     }
     setTimeout(() => setDetectMsg(""), 10000);
   };
 
   const handleLearnDeviceId = async () => {
     if (!isElectron) {
-      setLearnMsg("✗ ID Auto Detect funktioniert nur in der Electron-App, nicht im Browser.");
+      setLearnMsg(t("status.learnDesktopOnly"));
       return;
     }
     if (!gateway.serial_path?.trim()) {
-      setLearnMsg("✗ Kein serieller Port eingetragen. Bitte zuerst im Gateway-Schritt COM-Port auswählen oder manuell eintragen.");
+      setLearnMsg(t("status.learnMissingPort"));
       return;
     }
     setLearningId(true);
-    setLearnMsg("Höre 20 Sekunden auf EnOcean-Telegramme … jetzt Taste drücken oder Teach-in/LRN auslösen.");
+    setLearnMsg(t("status.learning"));
     const result = await window.electronAPI.learnDeviceId(gateway.serial_path, gateway.type, 20000);
     setLearningId(false);
     if (result.ok && result.id) {
       setForm(f => ({ ...f, dev_id: result.id }));
-      setLearnMsg(`✓ Geräte-ID erkannt: ${result.id}${result.rorg ? ` (RORG ${result.rorg})` : ""}`);
+      setLearnMsg(t("status.deviceIdDetected", { id: result.id, rorg: result.rorg ? ` (RORG ${result.rorg})` : "" }));
       setTimeout(() => setLearnMsg(""), 10000);
     } else {
-      setLearnMsg("✗ " + (result.error || "Keine Geräte-ID erkannt."));
+      setLearnMsg("✗ " + runtimeText(result.error || t("status.noDeviceId")));
       setTimeout(() => setLearnMsg(""), 12000);
     }
   };
@@ -956,12 +1054,12 @@ export default function App() {
 
   const validate = (f) => {
     const e = {};
-    if (!f.name.trim()) e.name = "Pflichtfeld";
-    if (!f.dev_id.trim()) e.dev_id = "Pflichtfeld";
+    if (!f.name.trim()) e.name = t("validation.required");
+    if (!f.dev_id.trim()) e.dev_id = t("validation.required");
     else if (!/^[0-9a-fA-F]{2}(-[0-9a-fA-F]{2}){3}$/.test(f.dev_id.trim()))
       e.dev_id = "Format: FF-AA-BB-CC";
     if (profile.needs_sender) {
-      if (!f.sender_id.trim()) e.sender_id = "Keine Base-ID für automatische Sender-ID gesetzt";
+      if (!f.sender_id.trim()) e.sender_id = t("validation.senderBaseIdMissing");
       else if (!/^[0-9a-fA-F]{2}(-[0-9a-fA-F]{2}){3}$/.test(f.sender_id.trim()))
         e.sender_id = "Format: FF-AA-BB-CC";
     }
@@ -985,8 +1083,8 @@ export default function App() {
     );
     if (duplicateIndex >= 0) {
       e.dev_id = isFbhOperatingMode(entry)
-        ? `Diese Geräte-ID ist bereits mit dem anderen FBH/TF-Betriebsmodus als „${devices[duplicateIndex].name}“ vorhanden. Pro physischem Gerät darf nur ein Modus exportiert werden.`
-        : `Diese Geräte-ID mit EEP ${exportEepForDevice(entry)} ist bereits als „${devices[duplicateIndex].name}“ vorhanden.`;
+        ? t("validation.duplicateFbh", { name: devices[duplicateIndex].name })
+        : t("validation.duplicateDevice", { eep: exportEepForDevice(entry), name: devices[duplicateIndex].name });
     }
     if (Object.keys(e).length) { setErrors(e); return; }
     setErrors({});
@@ -1046,7 +1144,7 @@ export default function App() {
       const result = parsePct14Xml(text, gateway.base_id, {
         includeFam14Gateway: importFam14Gateway,
         includeFgw14Gateway: importFgw14Gateway,
-      });
+      }, language);
       setPct14DetectedFam14(Boolean(result.hasFam14Gateway));
       setPct14DetectedFgw14(Boolean(result.hasFgw14Gateway));
       setPct14GatewayBaseId(result.baseId || "");
@@ -1064,17 +1162,17 @@ export default function App() {
         return merged;
       });
       if (!result.devices.length) {
-        setImportMsg(`✗ Keine unterstützten Geräte in ${file.name} gefunden.`);
+        setImportMsg(t("import.noSupportedDevices", { file: file.name }));
         return;
       }
       setDevices(existing => [...existing, ...result.devices]);
-      const unsupportedText = result.unsupported.length ? ` Nicht importiert: ${[...new Set(result.unsupported)].slice(0, 8).join(", ")}${result.unsupported.length > 8 ? " …" : ""}.` : "";
-      const senderText = result.missingSender ? ` Bei ${result.missingSender} Aktor-Kanälen wurde keine 00-00-B0-xx Sender-ID in PCT14 gefunden.` : "";
-      const importNoun = result.devices.length === 1 ? "Gerät/Kanal" : "Geräte/Kanäle";
-      setImportMsg(`✓ ${result.devices.length} ${importNoun} aus ${file.name} importiert.${result.baseId ? ` Base-ID: ${result.baseId}.` : ""}${senderText}${unsupportedText}`);
+      const unsupportedText = result.unsupported.length ? t("import.notImported", { devices: `${[...new Set(result.unsupported)].slice(0, 8).join(", ")}${result.unsupported.length > 8 ? " …" : ""}` }) : "";
+      const senderText = result.missingSender ? t("import.missingSender", { count: result.missingSender }) : "";
+      const importNoun = t(result.devices.length === 1 ? "import.oneDeviceChannel" : "import.manyDevicesChannels");
+      setImportMsg(t("import.success", { count: result.devices.length, noun: importNoun, file: file.name, baseId: result.baseId ? t("import.baseIdInfo", { baseId: result.baseId }) : "", sender: senderText, unsupported: unsupportedText }));
       setTimeout(() => setImportMsg(""), 20000);
     } catch (err) {
-      setImportMsg(`✗ Import fehlgeschlagen: ${err.message || err}`);
+      setImportMsg(t("import.failed", { error: runtimeText(err.message || err) }));
     }
   };
 
@@ -1082,13 +1180,13 @@ export default function App() {
   const handleDelete = (i) => { setDevices(d => d.filter((_,j)=>j!==i)); if(editIdx===i){setEditIdx(null);setForm(emptyForm);} };
   const handleDeleteAllDevices = () => {
     if (!devices.length) return;
-    const ok = window.confirm(`Alle ${devices.length} Geräte aus der Liste löschen? Die Gateway-Einstellungen bleiben erhalten.`);
+    const ok = window.confirm(t("import.deleteConfirm", { count: devices.length }));
     if (!ok) return;
     setDevices([]);
     setEditIdx(null);
     setForm(emptyForm);
     setErrors({});
-    setImportMsg("✓ Geräteliste wurde geleert.");
+    setImportMsg(t("import.listCleared"));
     setTimeout(() => setImportMsg(""), 6000);
   };
 
@@ -1103,10 +1201,18 @@ export default function App() {
     return active;
   };
 
+  // Keep an already generated YAML preview in the selected UI language.
+  // Without this, changing the language only translated the controls while
+  // the YAML header and explanatory comments remained in the previous language.
+  useEffect(() => {
+    if (!yaml || devices.length === 0) return;
+    setYaml(generateYaml(gateway, devices, buildActiveExtraGateways(), pct14GatewayBaseId, language));
+  }, [language]);
+
   const handleGenerate = () => {
     const normalized = normalizeFksSenderAssignments(gateway, devices, pct14GatewayBaseId);
     if (normalized.changed || normalized.devices.length !== devices.length) setDevices(normalized.devices);
-    setYaml(generateYaml(gateway, normalized.devices, buildActiveExtraGateways(), pct14GatewayBaseId));
+    setYaml(generateYaml(gateway, normalized.devices, buildActiveExtraGateways(), pct14GatewayBaseId, language));
     setStep(3);
   };
   const handleCopy = () => { navigator.clipboard.writeText(yaml); setCopied(true); setTimeout(()=>setCopied(false),2000); };
@@ -1122,41 +1228,41 @@ export default function App() {
   const senderProgrammingEntries = buildSenderProgrammingEntries(devices, selectedWriteGateway, pct14GatewayBaseId);
   const busWritePort = (writeBusPort || gateway.serial_path || "").trim();
   const busWriteGatewayConnected = ["fam14", "fgw14usb"].includes(gateway.type) && Boolean(busWritePort);
-  const busWriteHint = "Sender-IDs können nur über einen verbundenen FAM14 oder FGW14-USB am RS485-Bus geschrieben werden. Der COM-Port muss dieser RS485-Busanschluss sein. Das Schreiben der Sende Id in die Aktoren ist mit dem FAM-USB nicht möglich. PCT14 und Home Assistant dürfen den Bus währenddessen nicht verwenden.";
+  const busWriteHint = t("senderWrite.hint");
   const canWriteSenderIds = !writingSenders && busWriteGatewayConnected && senderProgrammingEntries.length > 0;
 
   const handleWriteSenderIds = async () => {
     if (!isElectron) {
-      setWriteSenderMsg("✗ Sender-IDs schreiben funktioniert nur in der Electron-App.");
+      setWriteSenderMsg(t("senderWrite.desktopOnly"));
       return;
     }
     if (!selectedWriteGateway) {
-      setWriteSenderMsg("✗ Kein Gateway für die Sender-IDs ausgewählt.");
+      setWriteSenderMsg(t("senderWrite.noGateway"));
       return;
     }
     const port = busWritePort;
     if (!["fam14", "fgw14usb"].includes(gateway.type)) {
-      setWriteSenderMsg("✗ Sender-IDs können nur über einen verbundenen FAM14 oder FGW14-USB am RS485-Bus geschrieben werden. Bitte im Gateway-Schritt FAM14/FGW14-USB auswählen und verbinden.");
+      setWriteSenderMsg(t("senderWrite.wrongGateway"));
       return;
     }
     if (!port) {
-      setWriteSenderMsg("✗ Kein Bus-COM-Port eingetragen. Bitte den COM-Port vom FAM14/FGW14-USB eintragen.");
+      setWriteSenderMsg(t("senderWrite.noPort"));
       return;
     }
     if (!pct14GatewayBaseId) {
-      setWriteSenderMsg("✗ Keine PCT14/FAM14-Base-ID vorhanden. Bitte zuerst PCT14-XML importieren.");
+      setWriteSenderMsg(t("senderWrite.noBaseId"));
       return;
     }
     if (!senderProgrammingEntries.length) {
-      setWriteSenderMsg("✗ Keine Series-14-Aktoren mit Sender-ID gefunden.");
+      setWriteSenderMsg(t("senderWrite.noEntries"));
       return;
     }
-    const ok = window.confirm(`Wichtiger Hinweis vor dem Schreiben der Sender-IDs\n\nDiese Funktion funktioniert nur mit einem verbundenen FAM14 oder FGW14-USB am RS485-Bus.\nDer COM-Port muss der RS485-Busanschluss sein.\nDas Schreiben der Sende Id in die Aktoren ist mit dem FAM-USB nicht möglich.\n\nPCT14 und Home Assistant müssen während des Schreibens geschlossen bzw. getrennt sein, damit niemand parallel auf den Bus zugreift.\n\nBus-Port: ${port}\nSender-Gateway: ${selectedWriteGateway.type} ${selectedWriteGateway.base_id || ""}\nEinträge: ${senderProgrammingEntries.length}\n\nJetzt Wirklich in die Baureihe 14-Aktoren schreiben?`);
+    const ok = window.confirm(t("senderWrite.confirm", { port, gateway: `${selectedWriteGateway.type} ${selectedWriteGateway.base_id || ""}`.trim(), count: senderProgrammingEntries.length }));
     if (!ok) return;
 
     setWritingSenders(true);
     setWriteSenderLog([]);
-    setWriteSenderMsg(`Schreibe ${senderProgrammingEntries.length} Sender-IDs in Baureihe-14-Aktoren …`);
+    setWriteSenderMsg(t("senderWrite.progress", { count: senderProgrammingEntries.length }));
     const result = await window.electronAPI.writeSenderIdsToDevices({
       portPath: port,
       gatewayType: "fam14",
@@ -1168,9 +1274,9 @@ export default function App() {
     setWriteSenderLog(result.events || []);
     if (result.ok) {
       const c = result.counts || {};
-      setWriteSenderMsg(`✓ Fertig. Geschrieben: ${c.updated || 0}, bereits vorhanden: ${c.exists || 0}, nicht unterstützt: ${c.unsupported || 0}, Fehler: ${c.error || 0}.`);
+      setWriteSenderMsg(t("senderWrite.done", { updated: c.updated || 0, exists: c.exists || 0, unsupported: c.unsupported || 0, errors: c.error || 0 }));
     } else {
-      setWriteSenderMsg("✗ " + (result.error || "Sender-ID Schreiben fehlgeschlagen."));
+      setWriteSenderMsg("✗ " + runtimeText(result.error || t("senderWrite.failed")));
     }
   };
 
@@ -1261,9 +1367,9 @@ export default function App() {
         </div>
         <div className="navSteps">
           {[
-            {n:1,label:"Gateway",hint:"Port & Base-ID"},
-            {n:2,label:"Geräte",hint:"Import & Zuordnung"},
-            {n:3,label:"YAML",hint:"Export für HA"},
+            {n:1,label:t("nav.gateway"),hint:t("nav.gatewayHint")},
+            {n:2,label:t("nav.devices"),hint:t("nav.devicesHint")},
+            {n:3,label:t("nav.yaml"),hint:t("nav.yamlHint")},
           ].map(s=>(
             <div key={s.n} className={`step ${step===s.n?"active":step>s.n?"done":"inactive"}`} onClick={()=>{ if(s.n<3||yaml) setStep(s.n); }}>
               <span className="stepBadge">{step>s.n?"✓":s.n}</span>
@@ -1272,23 +1378,23 @@ export default function App() {
           ))}
         </div>
         <div className="sideStatus">
-          <div><strong>Gateway:</strong> {gateway.type}</div>
-          <div><strong>Base-ID:</strong> {gateway.base_id || "nicht gesetzt"}</div>
-          <div><strong>Geräte:</strong> {devices.length}</div>
+          <div><strong>{t("common.gateway")}:</strong> {gateway.type}</div>
+          <div><strong>{t("common.baseId")}:</strong> {gateway.base_id || t("common.notSet")}</div>
+          <div><strong>{t("common.devices")}:</strong> {devices.length}</div>
         </div>
       </aside>
 
       <main className="workspace">
         <header className="topbar">
           <div>
-            <div className="pageTitle">{step===1?"Gateway einrichten":step===2?"Geräte verwalten":"YAML exportieren"}</div>
-            <div className="pageSub">{step===1?"Automatische Erkennung oder manuelle Auswahl":step===2?"PCT14 importieren, IDs erkennen und Geräte bearbeiten":"Konfiguration für Home Assistant prüfen und herunterladen"}</div>
+            <div className="pageTitle">{step===1?t("page.gatewayTitle"):step===2?t("page.devicesTitle"):t("page.yamlTitle")}</div>
+            <div className="pageSub">{step===1?t("page.gatewaySubtitle"):step===2?t("page.devicesSubtitle"):t("page.yamlSubtitle")}</div>
           </div>
           <div className="topMeta projectActions">
-            {projectFileName&&<span className="statusPill" title="Geöffnete oder zuletzt gespeicherte Projektdatei">{projectFileName}</span>}
-            <button className="btn ghost" onClick={handleOpenProject} disabled={!isElectron} title="Gespeichertes EEDTOY-Projekt öffnen">Projekt öffnen</button>
-            <button className="btn pri" onClick={handleSaveProjectAs} disabled={!isElectron} title="Aktuellen Bearbeitungsstand als EEDTOY-Projekt speichern">Projekt speichern unter …</button>
-            <span className="statusPill">{devices.length} Geräte</span>
+            {projectFileName&&<span className="statusPill" title={t("common.projectFileTitle")}>{projectFileName}</span>}
+            <button className="btn ghost" onClick={handleOpenProject} disabled={!isElectron} title={t("common.openProjectTitle")}>{t("common.openProject")}</button>
+            <button className="btn pri" onClick={handleSaveProjectAs} disabled={!isElectron} title={t("common.saveProjectAsTitle")}>{t("common.saveProjectAs")}</button>
+            <span className="statusPill">{t(devices.length === 1 ? "common.deviceCount" : "common.deviceCountPlural", { count: devices.length })}</span>
           </div>
         </header>
         <div className="content">
@@ -1300,7 +1406,7 @@ export default function App() {
         {/* ─── STEP 1: GATEWAY ─── */}
         {step===1&&(
           <div className="card" style={{padding:"1.25rem"}}>
-            <div style={{fontSize:".72rem",color:"#53616f",marginBottom:"1rem",fontWeight:600}}>Gateway auswählen</div>
+            <div style={{fontSize:".72rem",color:"#53616f",marginBottom:"1rem",fontWeight:600}}>{t("gateway.select")}</div>
 
             {/* Gateway type cards */}
             <div className="gatewayGrid" style={{marginBottom:"1rem"}}>
@@ -1308,7 +1414,7 @@ export default function App() {
                 <div key={gw.value} onClick={()=>setGateway(g=>({...g,type:gw.value}))}
                   className={`gatewayTile ${gateway.type===gw.value ? "active" : ""}`}>
                   <div className="gatewayName">{gw.label}</div>
-                  <div className="gatewayDesc">{gw.desc}</div>
+                  <div className="gatewayDesc">{t(gw.descKey)}</div>
                 </div>
               ))}
             </div>
@@ -1316,22 +1422,22 @@ export default function App() {
             {isElectron && (
               <div style={{margin:".8rem 0 1rem",display:"flex",gap:".6rem",alignItems:"center",flexWrap:"wrap"}}>
                 <button className="btn ghost" onClick={handleAutoDetectGateway} disabled={detecting || disconnectingGateway}>
-                  {detecting ? "Suche Gateway..." : "Gateway automatisch erkennen"}
+                  {detecting ? t("gateway.searching") : t("gateway.detect")}
                 </button>
                 <button
                   className="btn ghost"
                   onClick={handleDisconnectGateway}
                   disabled={detecting || disconnectingGateway || !gateway.serial_path?.trim() || !["fam14","fgw14usb"].includes(gateway.type)}
                   title={!["fam14","fgw14usb"].includes(gateway.type)
-                    ? "Disconnect ist für FAM14 oder FGW14-USB am RS485-Bus vorgesehen."
+                    ? t("gateway.disconnectTitleWrongType")
                     : !gateway.serial_path?.trim()
-                      ? "Bitte zuerst den COM-Port vom FAM14/FGW14-USB eintragen."
-                      : "Sendet Bus-Disconnect/Bus-Freigabe und schließt den COM-Port sauber."}
+                      ? t("gateway.disconnectTitleMissingPort")
+                      : t("gateway.disconnectTitleReady")}
                 >
-                  {disconnectingGateway ? "Trenne..." : "Disconnect / Bus freigeben"}
+                  {disconnectingGateway ? t("gateway.disconnecting") : t("gateway.disconnect")}
                 </button>
                 <div style={{fontSize:".68rem",color:"#64748b"}}>
-                  Testet alle erkannten seriellen Ports. Ein manuell eingetragener COM-Port wird zuerst geprüft. Vor dem Abziehen oder Wechseln eines FAM14 oder FGW14-USB bitte „Disconnect / Bus freigeben“ ausführen.
+                  {t("gateway.detectHelp")}
                 </div>
               </div>
             )}
@@ -1343,12 +1449,12 @@ export default function App() {
                 <div style={{display:"grid",gridTemplateColumns:"minmax(300px,1fr) minmax(360px,1.2fr) minmax(260px,1fr)",gap:".75rem",marginBottom:"1rem",alignItems:"start"}}>
                   {gw?.has_serial&&(
                     <div>
-                      <label>Serieller Port</label>
+                      <label>{t("gateway.serialPort")}</label>
                       <div style={{display:"flex",gap:".4rem"}}>
                         <input
                           value={gateway.serial_path}
                           onChange={e=>setGateway(g=>({...g,serial_path:e.target.value}))}
-                          placeholder="z.B. COM3"
+                          placeholder={t("gateway.serialPortPlaceholder")}
                           list="serial-port-list"
                           style={{flex:1}}
                         />
@@ -1358,11 +1464,11 @@ export default function App() {
                           ))}
                         </datalist>
                         {isElectron&&(
-                          <button className="btn ghost" style={{padding:".4rem .7rem",fontSize:".7rem",whiteSpace:"nowrap"}} onClick={handleScanPorts}>Suchen</button>
+                          <button className="btn ghost" style={{padding:".4rem .7rem",fontSize:".7rem",whiteSpace:"nowrap"}} onClick={handleScanPorts}>{t("common.search")}</button>
                         )}
                       </div>
                       <div style={{fontSize:".62rem",color:"#6b7280",marginTop:".2rem"}}>
-                        {isElectron ? "Suchen Klicken um alle Ports zu suchen" : "z.B. /dev/ttyUSB0 oder COM3"}
+                        {isElectron ? t("gateway.scanPortsHelp") : t("gateway.serialPortBrowserHelp")}
                       </div>
                     </div>
                   )}
@@ -1373,20 +1479,20 @@ export default function App() {
                         <input value={gateway.base_id} onChange={e=>setGateway(g=>({...g,base_id:e.target.value}))} placeholder="FF-AA-80-00" style={{flex:"0 0 150px",minWidth:150}}/>
                         {isElectron&&(
                           <button className="btn ghost" style={{padding:".4rem .9rem",fontSize:".72rem",whiteSpace:"nowrap",minWidth:142}} onClick={handleDetectBaseId} disabled={detecting}>
-                            {detecting ? (gateway.type==="fgw14usb" ? "Prüfe Gateway..." : "Lese Base ID...") : (gateway.type==="fgw14usb" ? "Gateway prüfen" : "Base ID auslesen")}
+                            {detecting ? t("gateway.readingBaseId") : t("gateway.readBaseId")}
                           </button>
                         )}
                       </div>
                       <div style={{fontSize:".62rem",color:"#6b7280",marginTop:".2rem"}}>
-                        {isElectron ? (gateway.type==="fgw14usb" ? "Gateway prüfen; Base-ID aus PCT14 übernehmen oder manuell eintragen" : "Automatisch vom Gateway auslesen") : "Steht auf der Rückseite des Geräts"}
+                        {isElectron ? t("gateway.readBaseIdHelp") : t("gateway.baseIdBackHelp")}
                       </div>
                     </div>
                   )}
                   {gw?.has_lan&&(
                     <div>
-                      <label>IP-Adresse</label>
+                      <label>{t("gateway.ipAddress")}</label>
                       <input value={gateway.lan_address} onChange={e=>setGateway(g=>({...g,lan_address:e.target.value}))} placeholder="192.168.1.100"/>
-                      <div style={{fontSize:".62rem",color:"#6b7280",marginTop:".2rem"}}>Port 5100 wird automatisch gesetzt</div>
+                      <div style={{fontSize:".62rem",color:"#6b7280",marginTop:".2rem"}}>{t("gateway.port5100")}</div>
                     </div>
                   )}
                 </div>
@@ -1404,14 +1510,14 @@ export default function App() {
             )}
 
             <div style={{background:"#eef5f8",border:"1px solid #c6d9e4",borderRadius:7,padding:".75rem",marginBottom:"1.2rem",fontSize:".7rem",color:"#64748b",lineHeight:1.8}}>
-              <strong style={{color:"#53616f"}}>Setup in Home Assistant:</strong><br/>
-              1. HACS installieren (falls noch nicht vorhanden)<br/>
-              2. Eltako Integration über HACS als Custom Repository hinzufügen<br/>
-              3. Integration "Eltako" in HA aktivieren → Gateway wird erkannt<br/>
-              4. Generierte YAML in <code style={{color:"#245873"}}>/config/configuration.yaml</code> einfügen
+              <strong style={{color:"#53616f"}}>{t("gateway.setupHeading")}</strong><br/>
+              {t("gateway.setup1")}<br/>
+              {t("gateway.setup2")}<br/>
+              {t("gateway.setup3")}<br/>
+              {t("gateway.setup4Before")} <code style={{color:"#245873"}}>/config/configuration.yaml</code> {t("gateway.setup4After")}
             </div>
 
-            <button className="btn pri" onClick={()=>setStep(2)}>Weiter → Geräte hinzufügen</button>
+            <button className="btn pri" onClick={()=>setStep(2)}>{t("gateway.continueToDevices")}</button>
           </div>
         )}
 
@@ -1421,13 +1527,13 @@ export default function App() {
 
             {/* PCT14 Import */}
             <div className="card" style={{padding:"1.1rem",marginBottom:"1rem"}}>
-              <div style={{fontSize:".72rem",color:"#53616f",marginBottom:".7rem",fontWeight:600}}>⬆ PCT14-Export importieren</div>
+              <div style={{fontSize:".72rem",color:"#53616f",marginBottom:".7rem",fontWeight:600}}>{t("devices.importTitle")}</div>
               <div style={{fontSize:".68rem",color:"#64748b",lineHeight:1.7,marginBottom:".8rem"}}>
-                Importiert unterstützte Series-14-Aktoren aus einer PCT14-XML/HTML-Exportdatei und fügt sie unten als Geräte hinzu. Unterstützt u. a. FSB14, FUD14, FRGBW14, FSR14, FHK14, FD2G14, FWG14MS, FWZ14 und DSZ14. Wenn die Datei ein FAM14 oder ein FGW14 enthält, erscheinen danach passende Gateway-Optionen.
+                {t("devices.importDescription")}
               </div>
               {(pct14DetectedFam14 || pct14DetectedFgw14) && (
                 <div style={{border:"1px solid #c6d9e4",background:"#f2f8fb",borderRadius:8,padding:".7rem .8rem",marginBottom:".85rem"}}>
-                  <div style={{fontSize:".68rem",color:"#53616f",fontWeight:800,marginBottom:".55rem"}}>Aus PCT14 erkannt</div>
+                  <div style={{fontSize:".68rem",color:"#53616f",fontWeight:800,marginBottom:".55rem"}}>{t("devices.detectedFromPct14")}</div>
                   {pct14DetectedFam14 && (
                     <label style={{display:"flex",alignItems:"center",gap:".55rem",fontSize:".72rem",color:"#405061",fontWeight:700,marginBottom:pct14DetectedFgw14?".55rem":0}}>
                       <input
@@ -1436,7 +1542,7 @@ export default function App() {
                         onChange={e=>handleImportFam14GatewayToggle(e.target.checked)}
                         style={{width:"auto",margin:0}}
                       />
-                      FAM14 als Gateway nutzen
+                      {t("devices.useFam14Gateway")}
                     </label>
                   )}
                   {pct14DetectedFgw14 && (
@@ -1447,13 +1553,13 @@ export default function App() {
                         onChange={e=>handleImportFgw14GatewayToggle(e.target.checked)}
                         style={{width:"auto",margin:0}}
                       />
-                      FGW14-USB als Gateway nutzen
+                      {t("devices.useFgw14Gateway")}
                     </label>
                   )}
                 </div>
               )}
               <label className="btn ghost" style={{display:"inline-block",width:"auto"}}>
-                Datei auswählen
+                {t("devices.chooseFile")}
                 <input type="file" accept=".xml,.html,.htm,text/xml,text/html" onChange={handlePct14Import} style={{display:"none"}} />
               </label>
               {importMsg&&(
@@ -1469,41 +1575,41 @@ export default function App() {
             {/* Form */}
             <div className="card" style={{padding:"1.1rem",marginBottom:"1rem"}}>
               <div style={{fontSize:".72rem",color:"#53616f",marginBottom:".9rem",fontWeight:600}}>
-                {editIdx!==null ? `✏️  Gerät #${editIdx+1} bearbeiten` : "＋  Gerät hinzufügen"}
+                {editIdx!==null ? t("devices.editHeading", { number: editIdx + 1 }) : t("devices.addHeading")}
               </div>
 
               {/* Name · ID · Raum */}
               <div style={{display:"grid",gridTemplateColumns:"minmax(180px,1fr) minmax(340px,1.4fr) minmax(180px,1fr)",gap:".65rem",marginBottom:".65rem"}}>
                 <div>
-                  <label>Name</label>
-                  <input className={errors.name?"err":""} value={form.name} onChange={e=>{setForm(f=>({...f,name:e.target.value})); setErrors({});}} placeholder="z.B. Wohnzimmer Fenster"/>
+                  <label>{t("devices.name")}</label>
+                  <input className={errors.name?"err":""} value={form.name} onChange={e=>{setForm(f=>({...f,name:e.target.value})); setErrors({});}} placeholder={t("devices.namePlaceholder")}/>
                   {errors.name&&<div className="em">{errors.name}</div>}
                 </div>
                 <div>
-                  <label>Geräte-ID</label>
+                  <label>{t("devices.deviceId")}</label>
                   <div style={{display:"flex",gap:".35rem"}}>
                     <input className={errors.dev_id?"err":""} value={form.dev_id} onChange={e=>{setForm(f=>({...f,dev_id:e.target.value})); setErrors({});}} placeholder="FF-AA-BB-CC" style={{flex:1,minWidth:170}}/>
-                    <button className="btn ghost" onClick={handleLearnDeviceId} disabled={learningId} title="Hört auf ein EnOcean-Telegramm und übernimmt die Sender-ID" style={{width:"auto",whiteSpace:"nowrap",padding:".55rem .7rem"}}>
-                      {learningId ? "…" : "ID Auto Detect"}
+                    <button className="btn ghost" onClick={handleLearnDeviceId} disabled={learningId} title={t("devices.autoDetectTitle")} style={{width:"auto",whiteSpace:"nowrap",padding:".55rem .7rem"}}>
+                      {learningId ? "…" : t("devices.autoDetect")}
                     </button>
                   </div>
                   {errors.dev_id&&<div className="em">{errors.dev_id}</div>}
                   {learnMsg&&<div style={{fontSize:".65rem",marginTop:".35rem",color:learnMsg.startsWith("✓")?"#22c55e":learnMsg.startsWith("✗")?"#f87171":"#2f6f8f",lineHeight:1.45}}>{learnMsg}</div>}
                 </div>
                 <div>
-                  <label>Raum (optional)</label>
-                  <input value={form.room} onChange={e=>setForm(f=>({...f,room:e.target.value}))} placeholder="z.B. Wohnzimmer"/>
+                  <label>{t("devices.roomOptional")}</label>
+                  <input value={form.room} onChange={e=>setForm(f=>({...f,room:e.target.value}))} placeholder={t("devices.roomPlaceholder")}/>
                 </div>
               </div>
 
               {/* EEP */}
               <div style={{marginBottom:".65rem"}}>
-                <label>Gerät / EEP — alle Eltako-Geräte</label>
+                <label>{t("devices.deviceEep")}</label>
                 <select value={form.eep} onChange={e=>changeEep(e.target.value)}>
                   {GROUPS.map(g=>(
-                    <optgroup key={g} label={`── ${g}`}>
+                    <optgroup key={g} label={`── ${translateGroup(language, g)}`}>
                       {Object.entries(EEP_DB).filter(([,v])=>v.group===g).map(([k,v])=>(
-                        <option key={k} value={k}>{v.label}</option>
+                        <option key={k} value={k}>{translateDeviceLabel(language, v.label)}</option>
                       ))}
                     </optgroup>
                   ))}
@@ -1521,7 +1627,7 @@ export default function App() {
               {/* device_class */}
               {profile.device_classes&&(
                 <div style={{maxWidth:220,marginBottom:".65rem"}}>
-                  <label>Device Class</label>
+                  <label>{t("devices.deviceClass")}</label>
                   <select value={form.device_class} onChange={e=>setForm(f=>({...f,device_class:e.target.value}))}>
                     {profile.device_classes.map(dc=><option key={dc} value={dc}>{dc}</option>)}
                   </select>
@@ -1532,32 +1638,32 @@ export default function App() {
               {profile.needs_sender&&(
                 <div style={{background:"#eef5f8",border:"1px solid #c6d9e4",borderRadius:7,padding:".75rem",marginBottom:".65rem"}}>
                   <div style={{fontSize:".66rem",color:"#2f6f8f",marginBottom:".5rem",fontWeight:600}}>
-                    Sender-ID — automatisch vergeben
+                    {t("devices.senderAuto")}
                   </div>
                   <div style={{fontSize:".65rem",color:"#6b7280",marginBottom:".5rem"}}>
-                    Wird aus der Gateway-Base-ID automatisch hochgezählt. Du kannst den Wert bei Bedarf manuell ändern.
+                    {t("devices.senderHelp")}
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:".6rem"}}>
                     <div>
-                      <label>Sender-ID</label>
+                      <label>{t("devices.senderId")}</label>
                       <input className={errors.sender_id?"err":""} value={form.sender_id || (profile.needs_sender ? autoSenderIdForGateway(gateway, devices) : "")} onChange={e=>{setForm(f=>({...f,sender_id:e.target.value})); setErrors({});}} placeholder={autoSenderIdForGateway(gateway, devices) || `${gateway.base_id.slice(0,-2)}01`}/>
                       {errors.sender_id&&<div className="em">{errors.sender_id}</div>}
                     </div>
                     <div>
-                      <label>Sender EEP</label>
+                      <label>{t("devices.senderEep")}</label>
                       <input value={form.sender_eep||profile.sender_eep||""} onChange={e=>setForm(f=>({...f,sender_eep:e.target.value}))} placeholder={profile.sender_eep}/>
                     </div>
                     {profile.platform==="cover"&&<>
-                      <div><label>Zeit Öffnen (s)</label><input type="number" value={form.time_opens} onChange={e=>setForm(f=>({...f,time_opens:e.target.value}))} placeholder="25"/></div>
-                      <div><label>Zeit Schließen (s)</label><input type="number" value={form.time_closes} onChange={e=>setForm(f=>({...f,time_closes:e.target.value}))} placeholder="24"/></div>
+                      <div><label>{t("devices.openTime")}</label><input type="number" value={form.time_opens} onChange={e=>setForm(f=>({...f,time_opens:e.target.value}))} placeholder="25"/></div>
+                      <div><label>{t("devices.closeTime")}</label><input type="number" value={form.time_closes} onChange={e=>setForm(f=>({...f,time_closes:e.target.value}))} placeholder="24"/></div>
                     </>}
                   </div>
                 </div>
               )}
 
               <div style={{display:"flex",gap:".55rem"}}>
-                <button className="btn pri" onClick={handleAdd}>{editIdx!==null?"Speichern":"Hinzufügen"}</button>
-                {editIdx!==null&&<button className="btn ghost" onClick={()=>{setEditIdx(null);setForm(emptyForm);setErrors({});}}>Abbrechen</button>}
+                <button className="btn pri" onClick={handleAdd}>{editIdx!==null?t("common.save"):t("common.add")}</button>
+                {editIdx!==null&&<button className="btn ghost" onClick={()=>{setEditIdx(null);setForm(emptyForm);setErrors({});}}>{t("common.cancel")}</button>}
               </div>
             </div>
 
@@ -1566,24 +1672,24 @@ export default function App() {
               <div className="card" style={{marginBottom:"1rem"}}>
                 <div style={{padding:".8rem 1.1rem",borderBottom:"1px solid #d9e0e7",display:"flex",justifyContent:"space-between",alignItems:"center",gap:".75rem"}}>
                   <span style={{fontSize:".75rem",color:"#53616f"}}>
-                    Geräte <strong style={{color:"#2f6f8f"}}>{devices.length}</strong>
+                    {t("devices.listTitle")} <strong style={{color:"#2f6f8f"}}>{devices.length}</strong>
                   </span>
                   <div style={{display:"flex",gap:".45rem",alignItems:"center"}}>
-                    <button className="btn del" onClick={handleDeleteAllDevices}>Alles löschen</button>
-                    <button className="btn pri" onClick={handleGenerate}>YAML generieren</button>
+                    <button className="btn del" onClick={handleDeleteAllDevices}>{t("common.deleteAll")}</button>
+                    <button className="btn pri" onClick={handleGenerate}>{t("common.generateYaml")}</button>
                   </div>
                 </div>
                 {devices.map((d,i)=>{
                   const col = PC[d.platform]??"#2f6f8f";
                   return(
                     <div key={i} className="rh" style={{display:"flex",alignItems:"center",gap:".65rem",padding:".65rem 1.1rem",borderBottom:i<devices.length-1?"1px solid #d9e0e7":"none"}}>
-                      <span style={{fontSize:".6rem",padding:".12rem .4rem",borderRadius:3,background:col+"20",color:col,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{PI[d.platform]} {d.platform}</span>
+                      <span style={{fontSize:".6rem",padding:".12rem .4rem",borderRadius:3,background:col+"20",color:col,fontWeight:600,flexShrink:0,whiteSpace:"nowrap"}}>{PI[d.platform]} {translatePlatform(language, d.platform)}</span>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{color:"#111827",fontWeight:600,fontSize:".82rem",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</div>
                         <div style={{color:"#6b7280",fontSize:".68rem"}}>{d.dev_id} · {d.eep.replace(/-sw$/,"")}{d.room?" · "+d.room:""}</div>
                       </div>
                       <div style={{display:"flex",gap:".35rem",flexShrink:0}}>
-                        <button className="btn edit" onClick={()=>handleEdit(i)}>Edit</button>
+                        <button className="btn edit" onClick={()=>handleEdit(i)}>{t("devices.editButton")}</button>
                         <button className="btn del" onClick={()=>handleDelete(i)}>✕</button>
                       </div>
                     </div>
@@ -1593,13 +1699,13 @@ export default function App() {
             ):(
               <div style={{textAlign:"center",padding:"2rem",border:"1px dashed #b9c7d3",borderRadius:10,marginBottom:"1rem",color:"#8a96a3"}}>
                 <div style={{fontSize:"1.8rem",marginBottom:".3rem"}}>📡</div>
-                <div style={{fontSize:".78rem"}}>Noch keine Geräte. Oben eintragen.</div>
+                <div style={{fontSize:".78rem"}}>{t("devices.noDevices")}</div>
               </div>
             )}
 
             <div style={{display:"flex",gap:".5rem"}}>
-              <button className="btn ghost" onClick={()=>setStep(1)}>← Gateway</button>
-              {devices.length>0&&<button className="btn pri" onClick={handleGenerate}>YAML generieren</button>}
+              <button className="btn ghost" onClick={()=>setStep(1)}>{t("devices.backToGateway")}</button>
+              {devices.length>0&&<button className="btn pri" onClick={handleGenerate}>{t("common.generateYaml")}</button>}
             </div>
           </>
         )}
@@ -1610,22 +1716,22 @@ export default function App() {
             <div className="card" style={{marginBottom:"1rem",padding:"1rem 1.1rem"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:"1rem",flexWrap:"wrap",marginBottom:".8rem"}}>
                 <div>
-                  <div style={{fontSize:".82rem",fontWeight:700,color:"#1f2937"}}>HA Sender-IDs in Series-14-Aktoren schreiben</div>
+                  <div style={{fontSize:".82rem",fontWeight:700,color:"#1f2937"}}>{t("yaml.writeTitle")}</div>
                   <div style={{fontSize:".68rem",color:"#667485",marginTop:".25rem",lineHeight:1.55}}>
-                    Schreibt die Sender-IDs aus dem YAML direkt in die Aktoren am FAM14/FGW14-USB Bus. Danach kennen die Aktoren Home Assistant und reagieren auf die HA-Telegramme.
+                    {t("yaml.writeDescription")}
                   </div>
                 </div>
-                <span className="statusPill">{senderProgrammingEntries.length} Sender</span>
+                <span className="statusPill">{t("common.senderCount", { count: senderProgrammingEntries.length })}</span>
               </div>
               <div title={!busWriteGatewayConnected ? busWriteHint : ""} style={{opacity:busWriteGatewayConnected?1:.48,cursor:busWriteGatewayConnected?"default":"not-allowed"}}>
                 <div style={{display:"grid",gridTemplateColumns:"minmax(210px,1fr) minmax(210px,1fr) auto",gap:".65rem",alignItems:"end"}}>
                   <div>
-                    <label>Bus-COM-Port FAM14/FGW14-USB</label>
-                    <input disabled={!busWriteGatewayConnected && !["fam14","fgw14usb"].includes(gateway.type)} value={writeBusPort || gateway.serial_path} onChange={e=>setWriteBusPort(e.target.value)} placeholder="z.B. COM3" list="serial-port-list"/>
-                    <div style={{fontSize:".62rem",color:"#6b7280",marginTop:".2rem"}}>Nicht der FAM-USB Funkstick, sondern der RS485-Busanschluss.</div>
+                    <label>{t("yaml.busComPort")}</label>
+                    <input disabled={!busWriteGatewayConnected && !["fam14","fgw14usb"].includes(gateway.type)} value={writeBusPort || gateway.serial_path} onChange={e=>setWriteBusPort(e.target.value)} placeholder={t("gateway.serialPortPlaceholder")} list="serial-port-list"/>
+                    <div style={{fontSize:".62rem",color:"#6b7280",marginTop:".2rem"}}>{t("yaml.busComPortHelp")}</div>
                   </div>
                   <div>
-                    <label>Sender-IDs aus Gateway</label>
+                    <label>{t("yaml.senderIdsFromGateway")}</label>
                     <select disabled={!busWriteGatewayConnected} value={gatewayKey(selectedWriteGateway)} onChange={e=>setWriteTargetGatewayKey(e.target.value)}>
                       {activeGatewayBlocks.map((gw, idx)=>(
                         <option key={`${gatewayKey(gw)}-${idx}`} value={gatewayKey(gw)}>{gw.type} {gw.base_id ? `(${gw.base_id})` : ""}</option>
@@ -1633,31 +1739,31 @@ export default function App() {
                     </select>
                   </div>
                   <button className="btn pri" onClick={handleWriteSenderIds} disabled={!canWriteSenderIds} style={{whiteSpace:"nowrap"}} title={!busWriteGatewayConnected ? busWriteHint : ""}>
-                    {writingSenders ? "Schreibe …" : "In Aktoren schreiben"}
+                    {writingSenders ? t("yaml.writing") : t("yaml.writeToActuators")}
                   </button>
                 </div>
               </div>
-              {!busWriteGatewayConnected&&<div style={{fontSize:".68rem",marginTop:".65rem",padding:".5rem .7rem",borderRadius:5,background:"#fff7ed",color:"#9a3412",border:"1px solid #fed7aa"}}>⚠ Sender-IDs schreiben ist deaktiviert: Es muss ein FAM14 oder FGW14-USB als RS485-Bus-Gateway verbunden und ein COM-Port eingetragen sein. Das Schreiben der Sende Id in die Aktoren ist mit dem FAM-USB nicht möglich.</div>}
+              {!busWriteGatewayConnected&&<div style={{fontSize:".68rem",marginTop:".65rem",padding:".5rem .7rem",borderRadius:5,background:"#fff7ed",color:"#9a3412",border:"1px solid #fed7aa"}}>{t("yaml.writeDisabled")}</div>}
               {writeSenderMsg&&<div style={{fontSize:".72rem",marginTop:".75rem",padding:".5rem .7rem",borderRadius:5,background:writeSenderMsg.startsWith("✓")?"#14532d22":writeSenderMsg.startsWith("✗")?"#450a0a22":"#eef5f8",color:writeSenderMsg.startsWith("✓")?"#166534":writeSenderMsg.startsWith("✗")?"#b42318":"#2f6f8f",border:"1px solid #c6d9e4"}}>{writeSenderMsg}</div>}
               {writeSenderLog.length>0&&(
                 <div style={{marginTop:".75rem",maxHeight:170,overflowY:"auto",fontSize:".66rem",lineHeight:1.5,color:"#53616f",background:"#f7f9fb",border:"1px solid #d9e0e7",borderRadius:6,padding:".55rem .7rem"}}>
-                  {writeSenderLog.slice(-80).map((e,i)=><div key={i}>{e.message || `${e.status}: ${e.device_id}`}</div>)}
+                  {writeSenderLog.slice(-80).map((e,i)=><div key={i}>{runtimeText(e.message || `${e.status}: ${e.device_id}`)}</div>)}
                 </div>
               )}
             </div>
 
             <div className="card" style={{marginBottom:"1rem"}}>
               <div style={{padding:".8rem 1.1rem",borderBottom:"1px solid #d9e0e7",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:".5rem"}}>
-                <span style={{fontSize:".8rem",color:"#53616f"}}>eltako_config.yaml — {devices.length} Gerät{devices.length!==1?"e":""}</span>
+                <span style={{fontSize:".8rem",color:"#53616f"}}>eltako_config.yaml — {t(devices.length === 1 ? "common.deviceCount" : "common.deviceCountPlural", { count: devices.length })}</span>
                 <div style={{display:"flex",gap:".5rem"}}>
-                  <button className="btn ghost" onClick={handleCopy}>{copied?"✓ Kopiert":"Kopieren"}</button>
-                  <button className="btn pri"   onClick={handleDL}>↓ Download</button>
+                  <button className="btn ghost" onClick={handleCopy}>{copied?t("common.copied"):t("common.copy")}</button>
+                  <button className="btn pri"   onClick={handleDL}>{t("common.download")}</button>
                 </div>
               </div>
 
               {/* Hint */}
               <div style={{padding:".7rem 1.1rem",borderBottom:"1px solid #d9e0e7",background:"#eef5f8",fontSize:".7rem",color:"#53616f",lineHeight:1.7}}>
-                Inhalt in <code style={{color:"#245873"}}>/config/configuration.yaml</code> einfügen · danach HA neu starten
+                {t("yaml.contentHintBefore")} <code style={{color:"#245873"}}>/config/configuration.yaml</code> {t("yaml.contentHintAfter")}
               </div>
 
               <pre style={{margin:0,padding:"1.1rem",fontSize:".73rem",lineHeight:1.85,color:"#53616f",overflowX:"auto",maxHeight:540,overflowY:"auto"}}>
@@ -1674,13 +1780,13 @@ export default function App() {
               </pre>
             </div>
 
-            <button className="btn ghost" onClick={()=>setStep(2)}>← Geräte bearbeiten</button>
+            <button className="btn ghost" onClick={()=>setStep(2)}>{t("yaml.backToDevices")}</button>
           </>
         )}
 
         <div style={{marginTop:"1.2rem",fontSize:".68rem",color:"#8a96a3",lineHeight:1.55}}>
           <div>EEDTOY – ELTAKO EnOcean Device to YAML Generator</div>
-          <div>Developed by D. Zirnbauer · Not an official product of ELTAKO GmbH</div>
+          <div>{t("footer.developerNotice")}</div>
         </div>
         </div>
       </main>

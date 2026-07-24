@@ -1,0 +1,23 @@
+name: Funktionswunsch
+description: Verbesserung oder neue Geräteunterstützung vorschlagen
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Ausgangssituation
+      description: Welches konkrete Problem soll gelöst werden?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Vorgeschlagene Lösung
+    validations:
+      required: true
+  - type: textarea
+    id: protocol
+    attributes:
+      label: Technische Angaben
+      description: Bei Geräten bitte EEP, Lerntelegramm und Datenbyte-Belegung angeben.

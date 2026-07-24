@@ -1,0 +1,56 @@
+name: Fehlerbericht
+description: Reproduzierbaren Fehler in EEDTOY melden
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Bitte keine Zugangsdaten, vollständigen Projektdateien oder vertraulichen Geräteinformationen veröffentlichen.
+  - type: input
+    id: version
+    attributes:
+      label: EEDTOY-Version
+      placeholder: 1.0.80
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows-Version
+    validations:
+      required: true
+  - type: dropdown
+    id: gateway
+    attributes:
+      label: Gateway
+      options:
+        - FAM14
+        - FAM-USB
+        - FGW14-USB
+        - anderes / nicht relevant
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduktionsschritte
+      description: Beschreibe den Ablauf möglichst genau.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Erwartetes Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Tatsächliches Verhalten
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevante Logs
+      render: shell

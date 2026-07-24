@@ -1,48 +1,43 @@
 # Changelog
 
-## 1.0.82
+## 1.0.93
 
-- EnOcean USB300 vollständig aus Auswahl, Erkennung und Laufzeitabhängigkeiten entfernt, da aktuell kein praktischer Test möglich ist.
-- FGW14-USB-Erkennung an das Verfahren des EnOcean Device Managers angepasst: 57600 Baud und aktive RS485-Schnittstelle ohne Echo-Unterdrückung.
-- FGW14-USB kann ohne Base-ID-Antwort erkannt werden; die Base-ID wird aus PCT14 übernommen oder manuell eingetragen.
-- Gateway-Hinweis neutral formuliert und technische Implementierungsdetails aus der Oberfläche entfernt.
-- Footer auf „Developed by D. Zirnbauer · Not an official product of ELTAKO GmbH“ geändert.
+- FTR65DSB, FTR55DSB, FTR55EHB, FTR55ESB, FTR65HB, FTRF65HB, FTR55HB, FTR65SB, FTRF65SB und FTR55SB ergänzt.
+- Für die FTR55/65-Familie sind die Betriebsarten TF61 (A5-38-08, Lerntelegramm `E0-40-0D-80`, EIN/AUS mit 1 K Hysterese) und FHK (A5-10-06, Lerntelegramm `40-30-0D-87`) auswählbar.
+- FHK-Profile exportieren den Sollwertbereich 12–28 °C sowie 8 °C als Frostschutzwert.
+- FDG14 als DALI-Gateway/Dimmaktor mit A5-38-08 FUNC=38, Command 2 ergänzt.
+- Der PCT14-Import erkennt FDG14 automatisch als dimmbaren A5-38-08-Aktor.
+- Deutsche und englische Gerätebezeichnungen sowie Regressionstests erweitert.
 
-## 1.0.81
+## 1.0.92
 
-- Gateway-Auswahl auf Eltako FAM-USB, FAM14, FGW14-USB und EnOcean USB300 reduziert.
-- Weitere nicht praktisch getestete Gateway-Typen aus der Oberfläche entfernt.
-- USB300 nutzt fuer Base-ID und Lerntelegramme Python EnOcean und `esp2_gateway_adapter`.
-- USB300 wird als experimentell sowie als ESP3-Hardware mit ESP2-Funktionsumfang gekennzeichnet.
+- Deutsche und englische Oberflächentexte vollständig sprachlich und technisch überarbeitet.
+- Gemischte deutsche/englische Beschriftungen wie `Disconnect / Bus freigeben`, `Wireless` und der englische Fußzeilentext in der deutschen Oberfläche entfernt.
+- Alle 61 freigegebenen Geräteprofile besitzen jetzt eine feste, vollständige englische Gerätebezeichnung. Die fehleranfällige Übersetzung aus einzelnen Wortfragmenten dient nur noch als Rückfall für zukünftige unbekannte Bezeichnungen.
+- Technische Begriffe für Klima, RGBW, Zähler, Relais, Rollladen/Jalousie und Series-14-Sender-IDs präzisiert.
+- Gateway-Beschreibungen, Projektdatei-Dialoge, Dateifilter, Kontextmenü und Info-Dialog werden vollständig in der gewählten Sprache angezeigt.
+- Beim Sprachwechsel wird eine bereits erzeugte YAML-Vorschau automatisch in der gewählten Sprache neu erzeugt.
+- Beim Öffnen eines Projekts wird die YAML-Vorschau mit der aktuellen EEDTOY-Version und der aktuell gewählten Sprache neu erzeugt; veraltete Kommentartexte aus älteren Projektdateien bleiben nicht erhalten.
+- Zusätzliche Regressionstests für Übersetzungsschlüssel, Platzhalter, alle 61 Gerätebezeichnungen, YAML-Erzeugung, FKS-SV-Sender-ID-Kollisionen und die Electron-IPC-Schnittstelle ergänzt.
+- Gerätedatenbank, EEP-Zuordnungen, Gateway-Protokolle und YAML-Maschinenschlüssel bleiben unverändert.
 
-## 1.0.80
+## 1.0.91
 
-- Publisher-, CompanyName- und Copyright-Metadaten auf D. Zirnbauer gesetzt.
-- App-ID auf `io.github.deniszeltako.eedtoy` geändert.
-- Hinweis ergänzt: privat entwickelt und kein offizielles Produkt der ELTAKO GmbH.
-- `publisherName` aus `build.win` entfernt, da electron-builder 26.15.3 diese Eigenschaft dort nicht mehr akzeptiert und der Installer nicht signiert wird.
-- GitHub-Repository-Struktur, Windows-Build-Workflow und Release-Erstellung ergänzt.
-- Lizenzierung auf GPL-3.0-or-later und Drittanbieter-Hinweise ergänzt.
-- Windows-Python-Startskript konsequent auf UTF-8-Ausgabe gestellt.
+- Englische Oberfläche vollständig auf feste React-Übersetzungsschlüssel umgestellt.
+- Gateway-, Geräte- und YAML-Seite einschließlich Formulare, Hinweise, Statusmeldungen und Schaltflächen vollständig zweisprachig.
+- Gerätegruppen und alle 61 freigegebenen Gerätebezeichnungen werden in der englischen Oberfläche übersetzt; Produktnamen und EEPs bleiben unverändert.
+- Dynamische Texte wie Geräteanzahl und `✓ Kopiert` bleiben unter React-Kontrolle und werden nicht mehr nachträglich im DOM überschrieben.
+- Deutsch/English bleibt über das Menü umschaltbar und wird gespeichert.
+- Neue Projektdateien erhalten je nach Sprache den Namen `EEDTOY-Projekt-…` oder `EEDTOY-Project-…`.
+- PCT14-importierte Geräte werden unabhängig von der beim Import aktiven Sprache weiterhin korrekt als PCT14-Geräte erkannt.
+- Keine Änderung an Gerätedatenbank, EEP-Zuordnung, Gateway-Protokollen oder YAML-Maschinenschlüsseln.
 
+## 1.0.90
 
-## 1.0.80 – GitHub- und Metadaten-Bereinigung
-
-- Publisher und Windows-`CompanyName` auf `D. Zirnbauer` geändert.
-- Copyright auf `D. Zirnbauer` geändert.
-- App-ID auf `io.github.deniszeltako.eedtoy` geändert.
-- Klarer Hinweis ergänzt: privat entwickelt und kein offizielles Produkt der ELTAKO GmbH.
-- Programmtitel, ELTAKO-Gerätekompatibilität und bestehendes Icon unverändert beibehalten.
-- GitHub-fertige Repository-Struktur ergänzt:
-  - Windows-Build- und Release-Workflow
-  - `.gitignore` und `.gitattributes`
-  - Issue- und Pull-Request-Vorlagen
-  - Sicherheits-, Beitrags-, Lizenz- und Markenhintergrund
-- README für Installation, Entwicklung und Releases neu strukturiert.
-
-## 1.0.79
-
-- FBH55ESB/FB55EB und FBHT55ESB im A5-08-01-FBH-Modus getrennt auswählbar.
-- FBHT55ESB exportiert die Temperaturauswertung explizit.
-- `FSS12` durch `FSS12-12V DC` als A5-12-01-Zählergerät ersetzt.
-- UTF-8-Ausgabe der Windows-Python-Installation verbessert.
+- FUTH55ED in fünf Betriebsarten ergänzt: FHK, FKS Kieback & Peter, FKS-H Hora, TF61R/FR62 und Hygrostat.
+- Produktbezeichnung `FFT60SB` für A5-04-01 festgelegt.
+- Aktorbezeichnungen `FSR14-2x` und `FSR14-4x` verwenden einen Bindestrich.
+- Nur `FSR71NP-4x-230V` ist als 4-Kanal-Variante der Baureihe 71 enthalten.
+- FFTE ist im gemeinsamen Profil `FTKE, FFTE, FFG7B` unter F6-10-00 enthalten.
+- FFG7B bleibt für A5-14-09 und F6-10-00 als dreistufiger Fenstergriff markiert.
+- Der Regressionsfix für Geräteanzahl und `✓ Kopiert` bleibt unverändert enthalten.
