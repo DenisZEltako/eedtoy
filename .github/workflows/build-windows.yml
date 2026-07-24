@@ -48,6 +48,9 @@ jobs:
       contents: write
 
     steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
       - name: Installer herunterladen
         uses: actions/download-artifact@v4
         with:
@@ -57,4 +60,5 @@ jobs:
       - name: GitHub Release erstellen
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: gh release create "${GITHUB_REF_NAME}" release/*.exe --generate-notes --verify-tag
