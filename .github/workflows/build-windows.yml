@@ -1,18 +1,22 @@
-name: Build Windows Installer
+name: Build and Test Windows Installer
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: read
 
     steps:
       - name: Repository auschecken
@@ -21,44 +25,60 @@ jobs:
       - name: Node.js einrichten
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
 
-      - name: Abhaengigkeiten installieren
+      - name: Build-Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+
+      - name: Node-Abhängigkeiten installieren
         run: npm ci
 
-      - name: Frontend pruefen
-        run: npm run build
+      - name: Eingebettete Python-Laufzeit bauen
+        shell: pwsh
+        run: ./build/prepare_embedded_python.ps1 -PythonVersion "3.12.10" -BuildPython "python"
+
+      - name: Eingebettete Python-Laufzeit prüfen
+        shell: pwsh
+        run: |
+          $python = Join-Path $PWD "python-runtime\python.exe"
+          if (!(Test-Path $python)) { throw "Embedded python.exe fehlt." }
+          & $python -I -c "import serial, serial_asyncio, aiocoap, yaml, eltakobus; from eltakobus.serial import RS485SerialInterfaceV2; print('embedded runtime OK')"
+          if ($LASTEXITCODE -ne 0) { throw "Embedded runtime validation failed." }
+
+      - name: Anwendungstests ausführen
+        run: npm test
 
       - name: Windows-Installer bauen
         run: npm run build:installer
 
+      - name: Installer auf sauberem Windows installieren
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path dist-exe -Filter "*.exe" -File | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $installer) { throw "Kein Windows-Installer gefunden." }
+
+          $installDir = Join-Path $env:RUNNER_TEMP "EEDTOY-installed"
+          if (Test-Path $installDir) { Remove-Item -Recurse -Force $installDir }
+
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS installation failed with exit code $($process.ExitCode)." }
+
+          $installedApp = Join-Path $installDir "EEDTOY.exe"
+          $installedPython = Join-Path $installDir "resources\python-runtime\python.exe"
+          if (!(Test-Path $installedApp)) { throw "Installed EEDTOY.exe fehlt." }
+          if (!(Test-Path $installedPython)) { throw "Installed embedded python.exe fehlt." }
+
+          & $installedPython -I -c "import serial, serial_asyncio, aiocoap, yaml, eltakobus; from eltakobus.serial import RS485SerialInterfaceV2; print('installed runtime OK')"
+          if ($LASTEXITCODE -ne 0) { throw "Installed runtime validation failed." }
+
+          "INSTALLER_PATH=$($installer.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Installer als Artefakt hochladen
         uses: actions/upload-artifact@v4
         with:
-          name: EEDTOY-Windows-${{ github.ref_name }}
-          path: dist-exe/*.exe
+          name: EEDTOY-Windows-${{ github.sha }}
+          path: ${{ env.INSTALLER_PATH }}
           if-no-files-found: error
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - name: Repository auschecken
-        uses: actions/checkout@v4
-
-      - name: Installer herunterladen
-        uses: actions/download-artifact@v4
-        with:
-          name: EEDTOY-Windows-${{ github.ref_name }}
-          path: release
-
-      - name: GitHub Release erstellen
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: gh release create "${GITHUB_REF_NAME}" release/*.exe --generate-notes --verify-tag
