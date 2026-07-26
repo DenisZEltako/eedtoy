@@ -11,9 +11,10 @@
     "build:exe": "npm run build:installer",
     "python:deps": "python -m pip install -r python/requirements.txt",
     "python:detect": "python python/detect_gateway.py --mode auto",
+    "python:embed": "powershell -NoProfile -ExecutionPolicy Bypass -File build/prepare_embedded_python.ps1",
     "build:dir": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& vite build && electron-builder --win --x64 --dir --publish never",
     "build:installer": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& vite build && electron-builder --win nsis --x64 --publish never",
-    "build:all": "npm run build:installer",
+    "build:all": "npm run python:embed && npm run build:installer",
     "python:bootstrap": "powershell -NoProfile -ExecutionPolicy Bypass -File python/bootstrap_runtime_windows.ps1",
     "test": "node tests/i18n_dynamic_text_regression.js && node tests/electron_i18n_regression.js && node tests/yaml_generation_regression.js && node tests/electron_ipc_contract_regression.js"
   },
@@ -77,6 +78,10 @@
       {
         "from": "python",
         "to": "python"
+      },
+      {
+        "from": "python-runtime",
+        "to": "python-runtime"
       }
     ],
     "nodeGypRebuild": false,
