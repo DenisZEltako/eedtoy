@@ -115,7 +115,11 @@ for (const key of new Set(referencedKeys)) {
   assert(api.translate('en', key) !== key, `English translation exists: ${key}`);
 }
 
-const databaseSource = appSource.slice(appSource.indexOf('const EEP_DB = {'), appSource.indexOf('const GROUPS'));
+// Normalize line endings before hashing so the database guard behaves identically
+// on Windows (CRLF) and Linux/macOS (LF).
+const databaseSource = appSource
+  .slice(appSource.indexOf('const EEP_DB = {'), appSource.indexOf('const GROUPS'))
+  .replace(/\r\n/g, '\n');
 const deviceRows = [...databaseSource.matchAll(/group:"([^"]+)"\s*,\s*label:"([^"]+)"/g)]
   .map((match) => ({ group: match[1], label: match[2] }));
 assertEqual(deviceRows.length, 64, 'Approved device profile count is 64');
