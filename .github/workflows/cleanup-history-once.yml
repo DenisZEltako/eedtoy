@@ -1,0 +1,67 @@
+name: Cleanup repository history once
+
+on:
+  push:
+    paths:
+      - .github/workflows/cleanup-history-once.yml
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Versehentliches v1.0.95 Release und Tag entfernen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view v1.0.95 --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release delete v1.0.95 --repo "$GH_REPO" --cleanup-tag --yes
+          else
+            gh api --method DELETE "repos/$GH_REPO/git/refs/tags/v1.0.95" >/dev/null 2>&1 || true
+          fi
+
+      - name: Alte GitHub-Actions-Laeufe entfernen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CURRENT_RUN_ID: ${{ github.run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh api --paginate "repos/$GH_REPO/actions/runs?per_page=100" --jq '.workflow_runs[] | [.id, .status] | @tsv' > runs.tsv
+
+          while IFS=$'\t' read -r run_id status; do
+            [ -z "$run_id" ] && continue
+            [ "$run_id" = "$CURRENT_RUN_ID" ] && continue
+
+            if [ "$status" = "queued" ] || [ "$status" = "in_progress" ] || [ "$status" = "waiting" ] || [ "$status" = "requested" ]; then
+              gh api --method POST "repos/$GH_REPO/actions/runs/$run_id/cancel" >/dev/null 2>&1 || true
+            fi
+          done < runs.tsv
+
+          sleep 8
+
+          while IFS=$'\t' read -r run_id status; do
+            [ -z "$run_id" ] && continue
+            [ "$run_id" = "$CURRENT_RUN_ID" ] && continue
+            gh api --method DELETE "repos/$GH_REPO/actions/runs/$run_id" >/dev/null 2>&1 || true
+          done < runs.tsv
+
+      - name: Einmaligen Bereinigungs-Workflow wieder entfernen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
+          git rm .github/workflows/cleanup-history-once.yml
+          git commit -m "Remove completed repository cleanup workflow"
+          git push origin main
