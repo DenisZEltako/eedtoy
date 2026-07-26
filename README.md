@@ -11,20 +11,29 @@ EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14
 - FDG14 als dimmbarer DALI-Aktor mit FUNC=38 / Command 2 (A5-38-08)
 - FAM14-, FAM-USB- und FGW14-USB-Unterstützung
 - automatische Gateway- und Base-ID-Erkennung
+- echtes COM-Port-Dropdown bei mehreren erkannten Schnittstellen
 - PCT14/XML-Import
 - automatische Geräte-ID-Erkennung über EnOcean-Telegramme
 - verwaltete Sender-IDs und Kollisionsprüfung
 - Home-Assistant-YAML-Export
 - EEDTOY-Projekte speichern und später wieder öffnen
-- Windows-Installer mit eigener Python-Laufzeitumgebung
+- Windows-Installer mit vollständig eingebetteter Python-3.12-Laufzeit
 
 ## Installation unter Windows
 
 1. Die aktuelle Datei `EEDTOY-Setup-<Version>.exe` aus den GitHub Releases herunterladen.
 2. Installer starten und Zielverzeichnis auswählen.
-3. Beim ersten Start richtet EEDTOY eine private Python-Umgebung im Benutzerprofil ein und installiert die benötigten Pakete.
+3. EEDTOY starten.
+
+Python 3.12 und alle für die Gateway-Erkennung benötigten Python-Module sind bereits vollständig im Installer enthalten. Beim Kunden werden weder Python noch pip-Pakete nachinstalliert. Eine vorhandene Python-Installation wird nicht verwendet oder verändert. Für die Installation selbst ist keine Internetverbindung erforderlich.
 
 Die Anwendung und der Installer sind derzeit nicht digital signiert. Windows kann deshalb eine SmartScreen-Warnung anzeigen.
+
+## Build und Releases
+
+Der dauerhafte CI-Workflow baut bei Änderungen auf `main` einen Windows-Installer, installiert ihn auf einem sauberen Windows-Runner und prüft anschließend die eingebettete Python-Laufzeit aus dem tatsächlichen Installationsverzeichnis.
+
+Ein Release wird manuell über den GitHub-Actions-Workflow **Create GitHub Release** erzeugt. Die angegebene Version muss vorher in `package.json`, `package-lock.json`, Anwendung und Regressionstests übereinstimmen.
 
 ## Datenschutz und Sicherheit
 
