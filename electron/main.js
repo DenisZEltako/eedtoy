@@ -945,7 +945,7 @@ async function tryInstallPythonWithWinget() {
 }
 
 async function validatePythonRuntime(pythonCmd, argsPrefix = []) {
-  const code = 'import serial, serial_asyncio, yaml, eltakobus; from eltakobus.serial import RS485SerialInterfaceV2; print("ok")';
+  const code = 'import serial, serial_asyncio, aiocoap, yaml, eltakobus; from eltakobus.serial import RS485SerialInterfaceV2; print("ok")';
   const r = await runProcess(pythonCmd, [...argsPrefix, '-c', code], { timeoutMs: 15000 });
   return { ok: r.ok && String(r.stdout || '').includes('ok'), details: r };
 }
