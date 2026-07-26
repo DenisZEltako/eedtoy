@@ -1,3 +1,4 @@
+# Permanent CI workflow for EEDTOY Windows installers.
 name: Build and Test Windows Installer
 
 on:
