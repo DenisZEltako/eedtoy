@@ -1,0 +1,303 @@
+name: Rebuild EEDTOY v1.0.94 with embedded Python
+
+on:
+  push:
+    paths:
+      - .github/workflows/rebuild-v1.0.94-embedded-python.yml
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: eedtoy-v1.0.94-embedded-python
+  cancel-in-progress: true
+
+jobs:
+  build-test-release:
+    runs-on: windows-latest
+    env:
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: v1.0.94
+      RELEASE_TITLE: EEDTOY v1.0.94
+
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Electron auf eingebettete Python-Laufzeit umstellen
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          main_path = Path("electron/main.js")
+          main = main_path.read_text(encoding="utf-8")
+
+          pattern = re.compile(
+              r'''// ─+\n// PYTHON RUNTIME AUTO-SETUP.*?async function getPythonCommands\(script\) \{.*?\n\}\n\n// ─+\n// PYTHON BRIDGE:''',
+              re.S,
+          )
+
+          replacement = '''// ─────────────────────────────────────────────────────────────────
+          // EMBEDDED PYTHON RUNTIME
+          // The Windows installer contains a complete, prevalidated Python 3.12
+          // runtime. EEDTOY never installs Python, invokes winget or uses a global
+          // customer Python installation.
+          // ─────────────────────────────────────────────────────────────────
+          let pythonRuntimeState = null;
+
+          function exists(p) {
+            try { return require('fs').existsSync(p); } catch { return false; }
+          }
+
+          function runProcess(cmd, args = [], options = {}) {
+            return new Promise((resolve) => {
+              const { spawn } = require('child_process');
+              let stdout = '';
+              let stderr = '';
+              let child;
+              try {
+                child = spawn(cmd, args, {
+                  cwd: options.cwd || process.cwd(),
+                  windowsHide: true,
+                  shell: false,
+                  env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', ...(options.env || {}) },
+                });
+              } catch (e) {
+                return resolve({ ok: false, code: -1, stdout, stderr, error: e.message || String(e), cmd, args });
+              }
+              const timer = setTimeout(() => { try { child.kill(); } catch {} }, options.timeoutMs || 30000);
+              child.stdout.on('data', d => { stdout += d.toString('utf8'); });
+              child.stderr.on('data', d => { stderr += d.toString('utf8'); });
+              child.on('error', e => {
+                clearTimeout(timer);
+                resolve({ ok: false, code: -1, stdout, stderr, error: e.message || String(e), cmd, args });
+              });
+              child.on('close', code => {
+                clearTimeout(timer);
+                resolve({ ok: code === 0, code, stdout, stderr, cmd, args });
+              });
+            });
+          }
+
+          function getEmbeddedPythonPath() {
+            const candidates = app.isPackaged
+              ? [path.join(process.resourcesPath || '', 'python-runtime', 'python.exe')]
+              : [
+                  process.env.EEDTOY_PYTHON || '',
+                  path.join(__dirname, '..', 'python-runtime', 'python.exe'),
+                ];
+            return candidates.find(candidate => candidate && exists(candidate)) || candidates[0];
+          }
+
+          async function validatePythonRuntime(pythonPath) {
+            const code = 'import serial, serial_asyncio, aiocoap, yaml, eltakobus; from eltakobus.serial import RS485SerialInterfaceV2; print("ok")';
+            const result = await runProcess(pythonPath, ['-I', '-c', code], { timeoutMs: 20000 });
+            return { ok: result.ok && String(result.stdout || '').includes('ok'), details: result };
+          }
+
+          async function ensurePythonRuntime() {
+            if (pythonRuntimeState?.ok && exists(pythonRuntimeState.pythonPath)) return pythonRuntimeState;
+
+            const pythonPath = getEmbeddedPythonPath();
+            const attempts = [];
+            if (!pythonPath || !exists(pythonPath)) {
+              pythonRuntimeState = {
+                ok: false,
+                error: 'Die eingebettete EEDTOY Python-Laufzeit fehlt. Bitte EEDTOY mit dem vollständigen Windows-Installer neu installieren.',
+                attempts: [{ step: 'embedded-runtime-present', ok: false, pythonPath }],
+              };
+              return pythonRuntimeState;
+            }
+
+            const validation = await validatePythonRuntime(pythonPath);
+            attempts.push({
+              step: 'validate-embedded-runtime',
+              ok: validation.ok,
+              pythonPath,
+              stdout: (validation.details.stdout || '').slice(-2000),
+              stderr: (validation.details.stderr || validation.details.error || '').slice(-4000),
+            });
+
+            if (!validation.ok) {
+              pythonRuntimeState = {
+                ok: false,
+                error: 'Die mitgelieferte EEDTOY Python-Laufzeit ist beschädigt oder unvollständig. Bitte EEDTOY neu installieren.',
+                attempts,
+              };
+              return pythonRuntimeState;
+            }
+
+            pythonRuntimeState = { ok: true, pythonPath, argsPrefix: ['-I'], attempts };
+            return pythonRuntimeState;
+          }
+
+          async function getPythonCommands(script) {
+            const setup = await ensurePythonRuntime();
+            if (!setup.ok) return { ok: false, commands: [], setup };
+            return {
+              ok: true,
+              commands: [{ cmd: setup.pythonPath, args: [...setup.argsPrefix, script] }],
+              setup,
+            };
+          }
+
+          // ─────────────────────────────────────────────────────────────────
+          // PYTHON BRIDGE:'''
+
+          main, count = pattern.subn(replacement, main, count=1)
+          if count != 1:
+              raise SystemExit(f"Embedded Python runtime replacement count was {count}, expected 1")
+
+          forbidden = [
+              "tryInstallPythonWithWinget",
+              "findSystemPython",
+              "pip', 'install'",
+              "Python.Python.3.12",
+          ]
+          for token in forbidden:
+              if token in main:
+                  raise SystemExit(f"Forbidden online/system Python fallback remains: {token}")
+
+          main_path.write_text(main, encoding="utf-8")
+
+      - name: Quellcodeänderung kontrollieren
+        shell: python
+        run: |
+          from pathlib import Path
+          import json
+
+          package = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          assert package["version"] == "1.0.94"
+          assert any(item.get("to") == "python-runtime" for item in package["build"]["extraResources"])
+
+          installer = Path("build/installer.nsh").read_text(encoding="utf-8")
+          assert "bootstrap_runtime.cmd" not in installer
+          assert "python-runtime\\python.exe" in installer
+
+          main = Path("electron/main.js").read_text(encoding="utf-8")
+          assert "getEmbeddedPythonPath" in main
+          assert "resourcesPath" in main
+          assert "tryInstallPythonWithWinget" not in main
+          assert "findSystemPython" not in main
+          assert "Python.Python.3.12" not in main
+
+      - name: Quellcodeänderung committen
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add electron/main.js package.json build/installer.nsh build/prepare_embedded_python.ps1 tests/i18n_dynamic_text_regression.js python/requirements.txt
+          if (-not (git diff --cached --quiet)) {
+            git commit -m "Embed Python runtime in EEDTOY v1.0.94 installer"
+            git push
+          }
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Build-Python 3.12 einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.10"
+
+      - name: Node-Abhängigkeiten installieren
+        run: npm ci
+
+      - name: Eingebettete Python-Laufzeit bauen
+        shell: pwsh
+        run: |
+          ./build/prepare_embedded_python.ps1 -PythonVersion "3.12.10" -BuildPython "python"
+
+      - name: Eingebettete Runtime vor dem Packaging prüfen
+        shell: pwsh
+        run: |
+          $python = Join-Path $PWD "python-runtime\python.exe"
+          if (!(Test-Path $python)) { throw "Embedded python.exe fehlt." }
+          & $python -I -c "import serial, serial_asyncio, aiocoap, yaml, eltakobus; from eltakobus.serial import RS485SerialInterfaceV2; print('embedded runtime pre-package OK')"
+          if ($LASTEXITCODE -ne 0) { throw "Embedded runtime pre-package validation failed." }
+
+      - name: Anwendungstests ausführen
+        run: npm test
+
+      - name: Windows-Installer bauen
+        run: npm run build:installer
+
+      - name: Installer auswählen
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path dist-exe -Filter "*.exe" -File |
+            Where-Object { $_.Name -match "1\.0\.94" } |
+            Sort-Object Length -Descending |
+            Select-Object -First 1
+          if (-not $installer) { throw "Kein EEDTOY-v1.0.94-Installer gefunden." }
+          "INSTALLER_PATH=$($installer.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "INSTALLER_NAME=$($installer.Name)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Installer auf sauberem Windows installieren
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:RUNNER_TEMP "EEDTOY-installed"
+          if (Test-Path $installDir) { Remove-Item -Recurse -Force $installDir }
+          $process = Start-Process -FilePath $env:INSTALLER_PATH -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "NSIS installation failed with exit code $($process.ExitCode)." }
+          "INSTALLED_EEDTOY_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Installierte Python-Laufzeit prüfen
+        shell: pwsh
+        run: |
+          $python = Join-Path $env:INSTALLED_EEDTOY_DIR "resources\python-runtime\python.exe"
+          $app = Join-Path $env:INSTALLED_EEDTOY_DIR "EEDTOY.exe"
+          if (!(Test-Path $app)) { throw "Installed EEDTOY.exe is missing." }
+          if (!(Test-Path $python)) { throw "Installed embedded python.exe is missing." }
+          & $python -I -c "import serial, serial_asyncio, aiocoap, yaml, eltakobus; from eltakobus.serial import RS485SerialInterfaceV2; print('installed embedded runtime OK')"
+          if ($LASTEXITCODE -ne 0) { throw "Installed embedded runtime validation failed." }
+
+      - name: Installer als Artefakt sichern
+        uses: actions/upload-artifact@v4
+        with:
+          name: EEDTOY-v1.0.94-embedded-python-installer
+          path: ${{ env.INSTALLER_PATH }}
+          if-no-files-found: error
+
+      - name: Release-Text erstellen
+        shell: pwsh
+        run: |
+          @"
+          ## EEDTOY v1.0.94
+
+          - Python 3.12 und sämtliche benötigten Module sind vollständig im Installer enthalten.
+          - Keine Python-, pip- oder winget-Installation beim Kunden.
+          - Keine Abhängigkeit von PATH, Microsoft-Store-Alias oder vorhandenen Python-Versionen.
+          - Kein CMD-Fenster während der Installation.
+          - Der Installer wurde auf einem sauberen Windows-System installiert und die eingebettete Runtime aus dem Installationsverzeichnis geprüft.
+          - Echtes COM-Port-Dropdown für mehrere erkannte Schnittstellen.
+
+          Die Versionsnummer bleibt **v1.0.94**, da der Installer derselben Funktionsversion korrigiert wurde.
+          "@ | Set-Content -Path release-notes-v1.0.94.md -Encoding utf8
+
+      - name: Release v1.0.94 ersetzen
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin main --tags
+          git checkout main
+          git pull --ff-only
+
+          git tag -f -a $env:RELEASE_TAG -m $env:RELEASE_TITLE
+          git push origin "refs/tags/$env:RELEASE_TAG" --force
+
+          gh release view $env:RELEASE_TAG --repo $env:GH_REPO *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG $env:INSTALLER_PATH --repo $env:GH_REPO --clobber
+            gh release edit $env:RELEASE_TAG --repo $env:GH_REPO --title $env:RELEASE_TITLE --notes-file release-notes-v1.0.94.md --latest
+          } else {
+            gh release create $env:RELEASE_TAG $env:INSTALLER_PATH --repo $env:GH_REPO --verify-tag --title $env:RELEASE_TITLE --notes-file release-notes-v1.0.94.md --latest
+          }
