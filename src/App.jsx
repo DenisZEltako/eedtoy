@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getStoredLanguage, storeLanguage, translate, translateDeviceLabel, translateGroup, translatePlatform, translateRuntimeText } from "./i18n.js";
 
-const APP_VERSION = "1.0.94";
+const APP_VERSION = "1.0.95";
 
 // ─────────────────────────────────────────────────────────────────
 // EEP Database — Eltako Home Assistant Integration
