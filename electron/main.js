@@ -837,44 +837,12 @@ async function detectGatewayOnSerialPorts(preferredPath = '') {
 
 
 // ─────────────────────────────────────────────────────────────────
-// PYTHON RUNTIME AUTO-SETUP
-// The Electron UI can run on a fresh Windows PC without the user manually
-// installing the Python packages. EEDTOY creates a private venv in the user
-// profile and installs python/requirements.txt automatically. If no Python is
-// installed on Windows, it can bootstrap Python 3 via winget when available.
+// EMBEDDED PYTHON RUNTIME
+// The Windows installer contains a complete, prevalidated Python 3.12
+// runtime. EEDTOY never installs Python, invokes winget or uses a global
+// customer Python installation.
 // ─────────────────────────────────────────────────────────────────
-let pythonRuntimeSetupPromise = null;
 let pythonRuntimeState = null;
-
-function getPythonFolderPath() {
-  const fs = require('fs');
-  const candidates = app.isPackaged
-    ? [
-        path.join(process.resourcesPath || '', 'python'),
-        path.join(process.cwd(), 'python'),
-        path.join(__dirname, '..', 'python'),
-      ]
-    : [
-        path.join(__dirname, '..', 'python'),
-        path.join(process.cwd(), 'python'),
-      ];
-  return candidates.find(x => x && fs.existsSync(x)) || candidates[0];
-}
-
-function getPythonRequirementsPath() {
-  return path.join(getPythonFolderPath(), 'requirements.txt');
-}
-
-function getPythonRuntimeDir() {
-  return path.join(app.getPath('userData'), 'python-runtime');
-}
-
-function getVenvPythonPath() {
-  const base = getPythonRuntimeDir();
-  return process.platform === 'win32'
-    ? path.join(base, 'Scripts', 'python.exe')
-    : path.join(base, 'bin', 'python3');
-}
 
 function exists(p) {
   try { return require('fs').existsSync(p); } catch { return false; }
@@ -890,7 +858,7 @@ function runProcess(cmd, args = [], options = {}) {
       child = spawn(cmd, args, {
         cwd: options.cwd || process.cwd(),
         windowsHide: true,
-        shell: !!options.shell,
+        shell: false,
         env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', ...(options.env || {}) },
       });
     } catch (e) {
@@ -910,130 +878,66 @@ function runProcess(cmd, args = [], options = {}) {
   });
 }
 
-async function pythonWorks(cmd, argsPrefix = []) {
-  const r = await runProcess(cmd, [...argsPrefix, '-c', 'import sys; print(sys.version_info[0]);'], { timeoutMs: 8000 });
-  return r.ok && String(r.stdout || '').trim().startsWith('3');
-}
-
-async function findSystemPython() {
-  const candidates = process.platform === 'win32'
-    ? [
-        { cmd: 'py', argsPrefix: ['-3'] },
-        { cmd: 'python', argsPrefix: [] },
-        { cmd: 'python3', argsPrefix: [] },
-      ]
+function getEmbeddedPythonPath() {
+  const candidates = app.isPackaged
+    ? [path.join(process.resourcesPath || '', 'python-runtime', 'python.exe')]
     : [
-        { cmd: 'python3', argsPrefix: [] },
-        { cmd: 'python', argsPrefix: [] },
+        process.env.EEDTOY_PYTHON || '',
+        path.join(__dirname, '..', 'python-runtime', 'python.exe'),
       ];
-  for (const c of candidates) {
-    if (await pythonWorks(c.cmd, c.argsPrefix)) return c;
-  }
-  return null;
+  return candidates.find(candidate => candidate && exists(candidate)) || candidates[0];
 }
 
-async function tryInstallPythonWithWinget() {
-  if (process.platform !== 'win32') return { ok: false, error: 'winget bootstrap is Windows-only.' };
-  const wingetCheck = await runProcess('winget', ['--version'], { timeoutMs: 10000 });
-  if (!wingetCheck.ok) return { ok: false, error: 'winget ist nicht verfügbar.' };
-  console.log('[python-runtime] Python 3 not found. Trying winget bootstrap...');
-  return runProcess('winget', [
-    'install', '-e', '--id', 'Python.Python.3.12',
-    '--silent', '--scope', 'user',
-    '--accept-package-agreements', '--accept-source-agreements',
-  ], { timeoutMs: 600000 });
-}
-
-async function validatePythonRuntime(pythonCmd, argsPrefix = []) {
+async function validatePythonRuntime(pythonPath) {
   const code = 'import serial, serial_asyncio, aiocoap, yaml, eltakobus; from eltakobus.serial import RS485SerialInterfaceV2; print("ok")';
-  const r = await runProcess(pythonCmd, [...argsPrefix, '-c', code], { timeoutMs: 15000 });
-  return { ok: r.ok && String(r.stdout || '').includes('ok'), details: r };
+  const result = await runProcess(pythonPath, ['-I', '-c', code], { timeoutMs: 20000 });
+  return { ok: result.ok && String(result.stdout || '').includes('ok'), details: result };
 }
 
 async function ensurePythonRuntime() {
-  if (pythonRuntimeState?.ok && pythonRuntimeState.pythonPath && exists(pythonRuntimeState.pythonPath)) return pythonRuntimeState;
-  if (pythonRuntimeSetupPromise) return pythonRuntimeSetupPromise;
+  if (pythonRuntimeState?.ok && exists(pythonRuntimeState.pythonPath)) return pythonRuntimeState;
 
-  pythonRuntimeSetupPromise = (async () => {
-    const fs = require('fs');
-    const runtimeDir = getPythonRuntimeDir();
-    const venvPython = getVenvPythonPath();
-    const requirements = getPythonRequirementsPath();
-    const attempts = [];
-
-    try { fs.mkdirSync(runtimeDir, { recursive: true }); } catch {}
-
-    if (exists(venvPython)) {
-      const valid = await validatePythonRuntime(venvPython, []);
-      attempts.push({ step: 'validate-existing-venv', ok: valid.ok, stderr: (valid.details.stderr || '').slice(-4000) });
-      if (valid.ok) {
-        pythonRuntimeState = { ok: true, pythonPath: venvPython, argsPrefix: [], runtimeDir, requirements, attempts };
-        return pythonRuntimeState;
-      }
-    }
-
-    let systemPython = await findSystemPython();
-    attempts.push({ step: 'find-system-python', ok: !!systemPython, python: systemPython });
-
-    if (!systemPython && process.platform === 'win32') {
-      const install = await tryInstallPythonWithWinget();
-      attempts.push({ step: 'winget-python-install', ok: install.ok, code: install.code, stderr: (install.stderr || install.error || '').slice(-4000) });
-      systemPython = await findSystemPython();
-      attempts.push({ step: 'find-system-python-after-winget', ok: !!systemPython, python: systemPython });
-    }
-
-    if (!systemPython) {
-      pythonRuntimeState = {
-        ok: false,
-        error: 'Python 3 konnte nicht automatisch gefunden oder installiert werden. Installiere Python 3 einmalig oder installiere über Microsoft Store/winget. Danach EEDTOY neu starten.',
-        attempts,
-      };
-      return pythonRuntimeState;
-    }
-
-    if (!exists(venvPython)) {
-      const create = await runProcess(systemPython.cmd, [...systemPython.argsPrefix, '-m', 'venv', runtimeDir], { timeoutMs: 120000 });
-      attempts.push({ step: 'create-venv', ok: create.ok, code: create.code, stderr: (create.stderr || create.error || '').slice(-4000) });
-      if (!create.ok) {
-        pythonRuntimeState = { ok: false, error: 'Python-Umgebung konnte nicht erstellt werden: ' + ((create.stderr || create.error || '').slice(-1000)), attempts };
-        return pythonRuntimeState;
-      }
-    }
-
-    // Make pip robust in the private venv, then install EEDTOY Python requirements.
-    const upgradePip = await runProcess(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip'], { timeoutMs: 180000 });
-    attempts.push({ step: 'upgrade-pip', ok: upgradePip.ok, code: upgradePip.code, stderr: (upgradePip.stderr || upgradePip.error || '').slice(-4000) });
-
-    const installReq = await runProcess(venvPython, ['-m', 'pip', 'install', '--upgrade', '-r', requirements], { timeoutMs: 300000 });
-    attempts.push({ step: 'install-requirements', ok: installReq.ok, code: installReq.code, stderr: (installReq.stderr || installReq.error || '').slice(-8000) });
-    if (!installReq.ok) {
-      pythonRuntimeState = { ok: false, error: 'Python-Pakete konnten nicht automatisch installiert werden: ' + ((installReq.stderr || installReq.error || '').slice(-1200)), attempts };
-      return pythonRuntimeState;
-    }
-
-    const valid = await validatePythonRuntime(venvPython, []);
-    attempts.push({ step: 'validate-new-venv', ok: valid.ok, stderr: (valid.details.stderr || '').slice(-4000) });
-    if (!valid.ok) {
-      pythonRuntimeState = { ok: false, error: 'Python-Umgebung wurde erstellt, aber die benötigten Module konnten nicht geladen werden: ' + ((valid.details.stderr || valid.details.stdout || '').slice(-1200)), attempts };
-      return pythonRuntimeState;
-    }
-
-    pythonRuntimeState = { ok: true, pythonPath: venvPython, argsPrefix: [], runtimeDir, requirements, attempts };
+  const pythonPath = getEmbeddedPythonPath();
+  const attempts = [];
+  if (!pythonPath || !exists(pythonPath)) {
+    pythonRuntimeState = {
+      ok: false,
+      error: 'Die eingebettete EEDTOY Python-Laufzeit fehlt. Bitte EEDTOY mit dem vollständigen Windows-Installer neu installieren.',
+      attempts: [{ step: 'embedded-runtime-present', ok: false, pythonPath }],
+    };
     return pythonRuntimeState;
-  })();
+  }
 
-  const result = await pythonRuntimeSetupPromise;
-  pythonRuntimeSetupPromise = null;
-  return result;
+  const validation = await validatePythonRuntime(pythonPath);
+  attempts.push({
+    step: 'validate-embedded-runtime',
+    ok: validation.ok,
+    pythonPath,
+    stdout: (validation.details.stdout || '').slice(-2000),
+    stderr: (validation.details.stderr || validation.details.error || '').slice(-4000),
+  });
+
+  if (!validation.ok) {
+    pythonRuntimeState = {
+      ok: false,
+      error: 'Die mitgelieferte EEDTOY Python-Laufzeit ist beschädigt oder unvollständig. Bitte EEDTOY neu installieren.',
+      attempts,
+    };
+    return pythonRuntimeState;
+  }
+
+  pythonRuntimeState = { ok: true, pythonPath, argsPrefix: ['-I'], attempts };
+  return pythonRuntimeState;
 }
 
 async function getPythonCommands(script) {
   const setup = await ensurePythonRuntime();
-  if (setup.ok) return { ok: true, commands: [{ cmd: setup.pythonPath, args: [script] }], setup };
-
-  // Never execute the detector with an unverified global Python.
-  // Otherwise users receive misleading ModuleNotFoundError messages.
-  return { ok: false, commands: [], setup };
+  if (!setup.ok) return { ok: false, commands: [], setup };
+  return {
+    ok: true,
+    commands: [{ cmd: setup.pythonPath, args: [...setup.argsPrefix, script] }],
+    setup,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────
