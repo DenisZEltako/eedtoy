@@ -1,5 +1,4 @@
-eltako14bus[serial,coap]==0.0.82
+eltako14bus[serial]==0.0.82
 pyserial>=3.5
 pyserial-asyncio>=0.6
-aiocoap>=0.4.17
 pyyaml>=6.0.1
