@@ -6,9 +6,6 @@ EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14
 
 ## Funktionen
 
-- FFG7B-Fenstergriff mit drei Zuständen (geschlossen, gekippt, offen) für A5-14-09 und F6-10-00
-- FTR55/65-Familie in den Betriebsarten TF61 (A5-38-08) und FHK (A5-10-06)
-- FDG14 als dimmbarer DALI-Aktor mit FUNC=38 / Command 2 (A5-38-08)
 - FAM14-, FAM-USB- und FGW14-USB-Unterstützung
 - automatische Gateway- und Base-ID-Erkennung
 - echtes COM-Port-Dropdown bei mehreren erkannten Schnittstellen
@@ -17,7 +14,6 @@ EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14
 - verwaltete Sender-IDs und Kollisionsprüfung
 - Home-Assistant-YAML-Export
 - EEDTOY-Projekte speichern und später wieder öffnen
-- Windows-Installer mit vollständig eingebetteter Python-3.12-Laufzeit
 
 ## Installation unter Windows
 
