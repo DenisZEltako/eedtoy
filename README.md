@@ -25,15 +25,9 @@ EEDTOY ist ein Desktop-Konfigurator für EnOcean-Geräte, ELTAKO-Gateways, PCT14
 2. Installer starten und Zielverzeichnis auswählen.
 3. EEDTOY starten.
 
-Python 3.12 und alle für die Gateway-Erkennung benötigten Python-Module sind bereits vollständig im Installer enthalten. Beim Kunden werden weder Python noch pip-Pakete nachinstalliert. Eine vorhandene Python-Installation wird nicht verwendet oder verändert. Für die Installation selbst ist keine Internetverbindung erforderlich.
+Python 3.12 und alle für die Gateway-Erkennung benötigten Python-Module sind bereits vollständig im Installer enthalten. Eine vorhandene Python-Installation wird nicht verwendet oder verändert. Für die Installation selbst ist keine Internetverbindung erforderlich.
 
 Die Anwendung und der Installer sind derzeit nicht digital signiert. Windows kann deshalb eine SmartScreen-Warnung anzeigen.
-
-## Build und Releases
-
-Der dauerhafte CI-Workflow baut bei Änderungen auf `main` einen Windows-Installer, installiert ihn auf einem sauberen Windows-Runner und prüft anschließend die eingebettete Python-Laufzeit aus dem tatsächlichen Installationsverzeichnis.
-
-Ein Release wird manuell über den GitHub-Actions-Workflow **Create GitHub Release** erzeugt. Die angegebene Version muss vorher in `package.json`, `package-lock.json`, Anwendung und Regressionstests übereinstimmen.
 
 ## Datenschutz und Sicherheit
 
