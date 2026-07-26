@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.94
+
+- Automatische Gateway-Erkennung für FAM14, FAM-USB und FGW14-USB stabilisiert.
+- Echtes COM-Port-Dropdown für mehrere erkannte serielle Schnittstellen ergänzt.
+- Bereits ausgewählter COM-Port bleibt bei einer erneuten Suche erhalten.
+- Manuelle COM-Port-Eingabe bleibt als Rückfall verfügbar.
+- Python 3.12 und alle benötigten Module werden vollständig im Windows-Installer mitgeliefert.
+- Beim Kunden werden weder Python noch pip-Pakete oder winget-Komponenten nachinstalliert.
+- Vorhandene Python-Installationen des Kunden werden nicht verwendet oder verändert.
+- Der CI-Build installiert den erzeugten Windows-Installer auf einem sauberen Runner und prüft die eingebettete Laufzeit aus dem tatsächlichen Installationsverzeichnis.
+- Versionsangaben in Anwendung, YAML-Header, `package.json`, `package-lock.json` und Regressionstests vereinheitlicht.
+- Plattformabhängige Zeilenenden werden bei der Schutzprüfung der freigegebenen Gerätedatenbank normalisiert.
+
 ## 1.0.93
 
 - FTR65DSB, FTR55DSB, FTR55EHB, FTR55ESB, FTR65HB, FTRF65HB, FTR55HB, FTR65SB, FTRF65SB und FTR55SB ergänzt.
