@@ -7,7 +7,6 @@
 - Bereits ausgewählter COM-Port bleibt bei einer erneuten Suche erhalten.
 - Manuelle COM-Port-Eingabe bleibt als Rückfall verfügbar.
 - Python 3.12 und alle benötigten Module werden vollständig im Windows-Installer mitgeliefert.
-- Beim Kunden werden weder Python noch pip-Pakete oder winget-Komponenten nachinstalliert.
 - Vorhandene Python-Installationen werden nicht verwendet oder verändert.
 - Der CI-Build installiert den erzeugten Windows-Installer auf einem sauberen Runner und prüft die eingebettete Laufzeit aus dem tatsächlichen Installationsverzeichnis.
 - Versionsangaben in Anwendung, YAML-Header, `package.json`, `package-lock.json` und Regressionstests vereinheitlicht.
