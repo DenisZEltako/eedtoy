@@ -3,16 +3,28 @@
 Write Home Assistant sender IDs into ELTAKO Series-14 bus actuators.
 
 This mirrors the relevant write path of Philipp Grimm's EnOcean Device Manager:
-connect to the FAM14/FGW14 bus, lock it, enumerate bus devices and call
-ensure_programmed(channel, sender_address, eep_profile) for programmable actors.
+connect to the FAM14/FGW14 bus, lock it, address only the devices referenced by
+the PCT14 sender map and program the requested controller sender IDs.
 """
 import argparse
 import asyncio
 import json
 import sys
-import time
 import traceback
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
+
+
+def _configure_utf8_streams() -> None:
+    """Keep umlauts intact in Electron on Windows and macOS."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_configure_utf8_streams()
 
 
 def jprint(obj: Dict[str, Any]) -> None:
@@ -34,10 +46,20 @@ def norm_id(value: str) -> str:
     return raw
 
 
-def load_sender_map(path: str) -> Dict[str, Dict[str, Dict[str, str]]]:
+def _id_to_int(value: str) -> Optional[int]:
+    clean = norm_id(value).replace("-", "")
+    if len(clean) != 8:
+        return None
+    try:
+        return int(clean, 16)
+    except ValueError:
+        return None
+
+
+def load_sender_map(path: str) -> Dict[str, Dict[str, Any]]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    result: Dict[str, Dict[str, Dict[str, str]]] = {}
+    result: Dict[str, Dict[str, Any]] = {}
     for item in data.get("entries", data if isinstance(data, list) else []):
         device_id = norm_id(item.get("device_id") or item.get("id") or "")
         sender_id = norm_id(item.get("sender_id") or "")
@@ -55,22 +77,49 @@ def load_sender_map(path: str) -> Dict[str, Dict[str, Dict[str, str]]]:
     return result
 
 
-async def enumerate_bus(bus: Any):
-    from eltakobus.device import BusObject, create_busobject, sorted_known_objects
+def target_bus_addresses(fam14_base_id_int: int, sender_map: Dict[str, Any]) -> List[int]:
+    """Return only the Series-14 addresses referenced by the sender map.
 
-    skip_until = 0
-    for i in range(1, 256):
+    PCT14 entries use the FAM14 base ID plus the physical bus address/channel
+    offset. Multi-channel devices are contiguous; after discovering their first
+    address, enumerate_target_devices skips the remaining covered addresses.
+    """
+    result: Set[int] = set()
+    for device_id in sender_map:
+        value = _id_to_int(device_id)
+        if value is None:
+            continue
+        offset = value - fam14_base_id_int
+        if 1 <= offset <= 254:
+            result.add(offset)
+        else:
+            log("ignore sender-map device outside FAM14 range", device_id, "offset", offset)
+    return sorted(result)
+
+
+async def enumerate_target_devices(bus: Any, target_addresses: List[int]):
+    """Discover only devices needed for the requested sender IDs."""
+    from eltakobus.device import create_busobject
+
+    pending: Set[int] = set(target_addresses)
+    while pending:
+        address = min(pending)
+        pending.discard(address)
         try:
-            if i <= skip_until:
+            bus_object = await create_busobject(bus=bus, id=address)
+            if bus_object is None:
+                log("No device response at target address", address)
                 continue
-            bus_object = await create_busobject(bus=bus, id=i)
-            skip_until = i + getattr(bus_object, "size", 1) - 1
+            start = int(getattr(bus_object, "address", address) or address)
+            size = max(1, int(getattr(bus_object, "size", 1) or 1))
+            for covered in range(start, min(255, start + size)):
+                pending.discard(covered)
+            log("target device", type(bus_object).__name__, "address", start, "size", size)
             yield bus_object
         except TimeoutError:
-            continue
+            log("Timeout detecting target device at address", address)
         except Exception as e:
-            log("Cannot detect device at address", i, repr(e))
-            continue
+            log("Cannot detect target device at address", address, repr(e))
 
 
 def _sender_bytes_from_id(sender_id: str) -> bytes:
@@ -88,11 +137,7 @@ def _clean_label(value: Any) -> str:
 
 
 def _entry_device_type(entry: Dict[str, Any]) -> str:
-    candidates = [
-        entry.get("device_type"),
-        entry.get("model"),
-        entry.get("eltako"),
-    ]
+    candidates = [entry.get("device_type"), entry.get("model"), entry.get("eltako")]
     name = _clean_label(entry.get("name"))
     if name:
         candidates.append(name.split()[0])
@@ -106,10 +151,6 @@ def _entry_device_type(entry: Dict[str, Any]) -> str:
 def _device_display_name(entry: Dict[str, Any], fallback_type: str, device_ext_id: str) -> str:
     device_type = _entry_device_type(entry)
     name = _clean_label(entry.get("name"))
-
-    # Der Log soll den echten Aktor/Anzeigenamen zeigen und nie den internen
-    # Python-Klassennamen BusObject. Bei Kanalnamen wie "Wohnzimmer LED Band"
-    # bleibt der Aktortyp zusätzlich sichtbar.
     if name and name != device_type and name != device_ext_id:
         return f"{name} ({device_type} {device_ext_id})"
     if device_type and device_type != "Gerät":
@@ -120,31 +161,9 @@ def _device_display_name(entry: Dict[str, Any], fallback_type: str, device_ext_i
     return f"Unbekanntes Gerät {device_ext_id}"
 
 
-async def _ensure_programmed_controller_profile(dev: Any, sender_id: str, channel: int = 0) -> Optional[bool]:
-    """Program controller/GFVS sender for profiles not known by eltako14bus.
-
-    FRGBW14/FRGBW71 use the free profile 07-37-F7. The currently available
-    eltako14bus package does not know this EEP and does not provide a dedicated
-    FRGBW device class. The Series-14 memory layout nevertheless follows the
-    normal controller/GFVS scheme used by dimmer-style devices: sender address +
-    key 0 + function 32 + channel/subchannel + value 0. We write only into an
-    empty line and never overwrite an existing non-empty line.
-    """
-    sender = _sender_bytes_from_id(sender_id)
+async def _find_or_write_free_line(dev: Any, expected_line: bytes, start_line: int) -> Optional[bool]:
     memory_size = int(getattr(dev, "memory_size", 0) or 0)
-    if memory_size <= 0 or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
-        return None
-
-    # For single logical RGBW controller entries use subchannel 1. This mirrors
-    # DimmerStyle behavior for devices without explicit subchannels.
-    subchannel = max(1, int(channel or 0) + 1)
-    expected_line = sender + bytes((0, 32, subchannel, 0))
-
-    # Keep lines 0..11 untouched; Series-14 actuator programmable sender slots
-    # normally start after device/system configuration. If memory is smaller,
-    # we do not guess.
-    start_line = 12
-    if memory_size <= start_line:
+    if memory_size <= start_line or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
         return None
 
     first_empty = None
@@ -157,8 +176,52 @@ async def _ensure_programmed_controller_profile(dev: Any, sender_id: str, channe
 
     if first_empty is None:
         raise RuntimeError("Kein freier Speicherplatz zum Einlernen des Controller-Senders gefunden")
-
     await dev.write_mem_line(first_empty, expected_line)
+    return True
+
+
+async def _ensure_programmed_controller_profile(dev: Any, sender_id: str, channel: int = 0) -> Optional[bool]:
+    """Program the FRGBW controller profile in a free controller slot."""
+    sender = _sender_bytes_from_id(sender_id)
+    subchannel = max(1, int(channel or 0) + 1)
+    expected_line = sender + bytes((0, 32, subchannel, 0))
+    return await _find_or_write_free_line(dev, expected_line, 12)
+
+
+async def _ensure_programmed_fsr14ssr(dev: Any, sender_id: str, channel: int = 0) -> Optional[bool]:
+    """Use the standard FSR14 function-group-2 layout for FSR14SSR."""
+    sender = _sender_bytes_from_id(sender_id)
+    if channel < 0 or channel > 7:
+        raise ValueError(f"Ungültiger FSR14SSR-Kanal: {channel + 1}")
+    expected_line = sender + bytes((0, 51, 1 << channel, 0))
+    return await _find_or_write_free_line(dev, expected_line, 12)
+
+
+async def _ensure_programmed_fhk_controller(
+    dev: Any,
+    sender_id: str,
+    channel: int,
+    device_type: str,
+) -> Optional[bool]:
+    """Program the fixed smart-home-controller line used by FHK14/F4HK14/FAE14SSR."""
+    sender = _sender_bytes_from_id(sender_id)
+    upper_type = str(device_type or "").upper()
+    start_line = 16 if "F4HK14" in upper_type else 12
+    memory_line = start_line + int(channel or 0)
+    memory_size = int(getattr(dev, "memory_size", 0) or 0)
+    if memory_line >= memory_size or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
+        return None
+
+    expected_line = sender + bytes((0, 65, 1 << int(channel or 0), 0))
+    current_line = await dev.read_mem_line(memory_line)
+    if current_line == expected_line:
+        return False
+    if any(current_line):
+        current_sender = norm_id("-".join(f"{b:02X}" for b in current_line[:4]))
+        raise RuntimeError(
+            f"FHK-Controller-Speicherzeile {memory_line} ist bereits mit Sender {current_sender} belegt"
+        )
+    await dev.write_mem_line(memory_line, expected_line)
     return True
 
 
@@ -173,7 +236,6 @@ async def ensure_programmed_for_device(fam14_base_id_int: int, dev: Any, sender_
         from eltakobus.util import AddressExpression
 
     events: List[Dict[str, Any]] = []
-
     size = int(getattr(dev, "size", 1) or 1)
     address = int(getattr(dev, "address", 0) or 0)
     dev_type = type(dev).__name__
@@ -188,8 +250,12 @@ async def ensure_programmed_for_device(fam14_base_id_int: int, dev: Any, sender_
         sender_eep = str(entry["sender"].get("eep", "")).strip().upper()
         device_eep = str(entry.get("device_eep") or "").strip().upper()
         entry_name = str(entry.get("name") or "")
+        entry_type = _entry_device_type(entry)
+        combined_label = f"{entry_type} {entry_name}"
         display_name = _device_display_name(entry, dev_type, device_ext_id)
-        is_frgbw = sender_eep == "07-37-F7" or device_eep == "07-37-F7" or "FRGBW" in entry_name.upper() or "FRGBW" in display_name.upper()
+        is_frgbw = sender_eep == "07-37-F7" or device_eep == "07-37-F7" or "FRGBW" in combined_label.upper()
+        is_fsr14ssr = "FSR14SSR" in combined_label.upper()
+        is_fhk = any(token in combined_label.upper() for token in ("FHK14", "F4HK14", "FAE14SSR"))
         if not sender_id or not sender_eep:
             continue
 
@@ -201,6 +267,10 @@ async def ensure_programmed_for_device(fam14_base_id_int: int, dev: Any, sender_
             try:
                 if is_frgbw:
                     update_result = await _ensure_programmed_controller_profile(dev, sender_id, channel)
+                elif is_fsr14ssr:
+                    update_result = await _ensure_programmed_fsr14ssr(dev, sender_id, channel)
+                elif is_fhk and sender_eep == "A5-10-06":
+                    update_result = await _ensure_programmed_fhk_controller(dev, sender_id, channel, entry_type)
                 elif isinstance(dev, HasProgrammableRPS) or isinstance(dev, DimmerStyle) or hasattr(dev, "ensure_programmed"):
                     sender_address = AddressExpression.parse(sender_id)
                     eep_profile = EEP.find(sender_eep)
@@ -208,19 +278,19 @@ async def ensure_programmed_for_device(fam14_base_id_int: int, dev: Any, sender_
                 else:
                     update_result = None
                 last_exception = None
-                time.sleep(0.2)
+                await asyncio.sleep(0.05)
                 break
             except (WriteError, TimeoutError, Exception) as e:
                 last_exception = e
                 retry -= 1
                 log("retry", 3 - retry, "failed", dev_type, device_ext_id, sender_id, sender_eep, repr(e))
-                time.sleep(0.2)
+                await asyncio.sleep(0.15)
 
         if last_exception is not None:
             events.append({
                 "status": "error",
                 "device_id": device_ext_id,
-                "device_type": _entry_device_type(entry),
+                "device_type": entry_type,
                 "sender_id": sender_id,
                 "sender_eep": sender_eep,
                 "message": f"Fehler beim Schreiben von {sender_id} ({sender_eep}) in {display_name}: {type(last_exception).__name__}: {last_exception}",
@@ -240,7 +310,7 @@ async def ensure_programmed_for_device(fam14_base_id_int: int, dev: Any, sender_
         events.append({
             "status": status,
             "device_id": device_ext_id,
-            "device_type": _entry_device_type(entry),
+            "device_type": entry_type,
             "sender_id": sender_id,
             "sender_eep": sender_eep,
             "message": message,
@@ -265,12 +335,7 @@ async def write_senders(port: str, sender_map_path: str, baud_rate: int = 57600,
     try:
         delay_message = 0.001 if baud_rate == 57600 else 0.2
         log("connect", port, baud_rate, gateway_type, "sender entries", len(sender_map))
-        bus = RS485SerialInterfaceV2(
-            port,
-            baud_rate=baud_rate,
-            delay_message=delay_message,
-            auto_reconnect=False,
-        )
+        bus = RS485SerialInterfaceV2(port, baud_rate=baud_rate, delay_message=delay_message, auto_reconnect=False)
         bus.start()
         bus.is_serial_connected.wait(timeout=2)
         if not bus.is_active():
@@ -289,17 +354,39 @@ async def write_senders(port: str, sender_map_path: str, baud_rate: int = 57600,
         fam14_base_id = b2s(await fam14.get_base_id_in_bytes())
         log("fam14 base", fam14_base_id)
 
-        async for dev in enumerate_bus(bus):
+        target_addresses = target_bus_addresses(fam14_base_id_int, sender_map)
+        log("target bus addresses", ",".join(str(a) for a in target_addresses))
+        processed_ids: Set[str] = set()
+
+        async for dev in enumerate_target_devices(bus, target_addresses):
             device_events = await ensure_programmed_for_device(fam14_base_id_int, dev, sender_map)
             events.extend(device_events)
+            processed_ids.update(e.get("device_id", "") for e in device_events)
+
+        for device_id, entry in sender_map.items():
+            if device_id in processed_ids:
+                continue
+            sender_id = norm_id(entry.get("sender", {}).get("id", ""))
+            sender_eep = str(entry.get("sender", {}).get("eep", "")).strip().upper()
+            display_name = _device_display_name(entry, "BusObject", device_id)
+            events.append({
+                "status": "error",
+                "device_id": device_id,
+                "device_type": _entry_device_type(entry),
+                "sender_id": sender_id,
+                "sender_eep": sender_eep,
+                "message": f"Busgerät {display_name} wurde an der erwarteten Series-14-Adresse nicht gefunden.",
+            })
 
         counts: Dict[str, int] = {}
-        for e in events:
-            counts[e.get("status", "unknown")] = counts.get(e.get("status", "unknown"), 0) + 1
+        for event in events:
+            counts[event.get("status", "unknown")] = counts.get(event.get("status", "unknown"), 0) + 1
 
         return {
             "ok": True,
             "fam14_base_id": fam14_base_id,
+            "target_addresses": target_addresses,
+            "scanned_devices": len({e.get("device_id") for e in events if e.get("device_id")}),
             "events": events,
             "counts": counts,
             "message": f"Sender-ID Schreiben beendet. Aktualisiert: {counts.get('updated', 0)}, bereits vorhanden: {counts.get('exists', 0)}, nicht unterstützt: {counts.get('unsupported', 0)}, Fehler: {counts.get('error', 0)}.",
