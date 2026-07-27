@@ -120,7 +120,7 @@ jobs:
           path: ${{ env.INSTALLER_PATH }}
           if-no-files-found: error
 
-      - name: Release veröffentlichen
+            - name: Release veröffentlichen
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -128,7 +128,10 @@ jobs:
         run: |
           $releaseExists = $false
           gh release view $env:RELEASE_TAG --repo $env:GH_REPO *> $null
-          if ($LASTEXITCODE -eq 0) { $releaseExists = $true }
+
+          if ($LASTEXITCODE -eq 0) {
+            $releaseExists = $true
+          }
 
           if ($releaseExists -and $env:REPLACE_EXISTING -ne "true") {
             throw "Release $env:RELEASE_TAG already exists. Enable replace_existing to replace its asset."
@@ -136,12 +139,51 @@ jobs:
 
           if (-not $releaseExists) {
             $tagExists = git ls-remote --tags origin "refs/tags/$env:RELEASE_TAG"
+
             if (-not $tagExists) {
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
               git tag -a $env:RELEASE_TAG -m "EEDTOY $env:RELEASE_TAG"
+
+              if ($LASTEXITCODE -ne 0) {
+                throw "Tag $env:RELEASE_TAG konnte nicht erstellt werden."
+              }
+
               git push origin $env:RELEASE_TAG
+
+              if ($LASTEXITCODE -ne 0) {
+                throw "Tag $env:RELEASE_TAG konnte nicht hochgeladen werden."
+              }
             }
-            gh release create $env:RELEASE_TAG $env:INSTALLER_PATH --repo $env:GH_REPO --verify-tag --title "EEDTOY $env:RELEASE_TAG" --generate-notes --latest
-          } else {
-            gh release upload $env:RELEASE_TAG $env:INSTALLER_PATH --repo $env:GH_REPO --clobber
-            gh release edit $env:RELEASE_TAG --repo $env:GH_REPO --title "EEDTOY $env:RELEASE_TAG" --latest
+
+            gh release create `
+              $env:RELEASE_TAG `
+              $env:INSTALLER_PATH `
+              --repo $env:GH_REPO `
+              --verify-tag `
+              --title "EEDTOY $env:RELEASE_TAG" `
+              --generate-notes `
+              --latest
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Release $env:RELEASE_TAG konnte nicht erstellt werden."
+            }
+          }
+          else {
+            gh release upload `
+              $env:RELEASE_TAG `
+              $env:INSTALLER_PATH `
+              --repo $env:GH_REPO `
+              --clobber
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Installer konnte nicht ersetzt werden."
+            }
+
+            gh release edit `
+              $env:RELEASE_TAG `
+              --repo $env:GH_REPO `
+              --title "EEDTOY $env:RELEASE_TAG" `
+              --latest
           }
