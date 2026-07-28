@@ -1,0 +1,109 @@
+name: Apply FAM-USB Sender Snapshot Fix
+
+on:
+  push:
+    branches:
+      - agent/basic-sender-write-1.0.95
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/basic-sender-write-1.0.95
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Apply generated gateway snapshot fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/App.jsx')
+          text = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected 1 match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '  const [yaml, setYaml]       = useState("");\n',
+              '  const [yaml, setYaml]       = useState("");\n  const [generatedGatewayBlocks, setGeneratedGatewayBlocks] = useState([]);\n',
+              'generated gateway state',
+          )
+
+          replace_once(
+              '      yaml,\n      importFam14Gateway,',
+              '      yaml,\n      generatedGatewayBlocks,\n      importFam14Gateway,',
+              'project snapshot persistence',
+          )
+
+          replace_once(
+              '    const loadedYaml = loadedDevices.length > 0\n      ? generateYaml(loadedGateway, loadedDevices, activeLoadedGateways, loadedPct14GatewayBaseId, language)\n      : "";\n',
+              '    const loadedGatewayBlocks = Array.isArray(state.generatedGatewayBlocks) && state.generatedGatewayBlocks.length\n      ? state.generatedGatewayBlocks\n      : orderedGatewayBlocks(loadedGateway, activeLoadedGateways);\n    const loadedYaml = loadedDevices.length > 0\n      ? generateYaml(loadedGateway, loadedDevices, loadedGatewayBlocks.slice(1), loadedPct14GatewayBaseId, language)\n      : "";\n',
+              'loaded snapshot fallback',
+          )
+
+          replace_once(
+              '    setYaml(loadedYaml);\n    setImportFam14Gateway(loadedImportFam14Gateway);',
+              '    setYaml(loadedYaml);\n    setGeneratedGatewayBlocks(loadedGatewayBlocks);\n    setImportFam14Gateway(loadedImportFam14Gateway);',
+              'restore generated gateway snapshot',
+          )
+
+          replace_once(
+              '  useEffect(() => {\n    if (!yaml || devices.length === 0) return;\n    setYaml(generateYaml(gateway, devices, buildActiveExtraGateways(), pct14GatewayBaseId, language));\n  }, [language]);\n\n  const handleGenerate = () => {\n    const normalized = normalizeFksSenderAssignments(gateway, devices, pct14GatewayBaseId);\n    if (normalized.changed || normalized.devices.length !== devices.length) setDevices(normalized.devices);\n    setYaml(generateYaml(gateway, normalized.devices, buildActiveExtraGateways(), pct14GatewayBaseId, language));\n    setStep(3);\n  };',
+              '  useEffect(() => {\n    if (!yaml || devices.length === 0) return;\n    const snapshot = generatedGatewayBlocks.length\n      ? generatedGatewayBlocks\n      : orderedGatewayBlocks(gateway, buildActiveExtraGateways());\n    const [snapshotPrimary, ...snapshotExtras] = snapshot;\n    setYaml(generateYaml(snapshotPrimary || gateway, devices, snapshotExtras, pct14GatewayBaseId, language));\n  }, [language]);\n\n  const handleGenerate = () => {\n    const normalized = normalizeFksSenderAssignments(gateway, devices, pct14GatewayBaseId);\n    if (normalized.changed || normalized.devices.length !== devices.length) setDevices(normalized.devices);\n    const gatewaySnapshot = orderedGatewayBlocks(gateway, buildActiveExtraGateways()).map(gw => ({ ...gw }));\n    const [snapshotPrimary, ...snapshotExtras] = gatewaySnapshot;\n    setGeneratedGatewayBlocks(gatewaySnapshot);\n    setYaml(generateYaml(snapshotPrimary || gateway, normalized.devices, snapshotExtras, pct14GatewayBaseId, language));\n    setStep(3);\n  };',
+              'generation snapshot',
+          )
+
+          replace_once(
+              '  const activeGatewayBlocks = orderedGatewayBlocks(gateway, buildActiveExtraGateways());\n  const senderProgrammingEntries = buildSenderProgrammingEntries(devices, activeGatewayBlocks, pct14GatewayBaseId);\n  const senderGatewaySummary = activeGatewayBlocks\n',
+              '  const currentGatewayBlocks = orderedGatewayBlocks(gateway, buildActiveExtraGateways());\n  const activeGatewayBlocks = yaml && generatedGatewayBlocks.length\n    ? generatedGatewayBlocks\n    : currentGatewayBlocks;\n  const senderProgrammingEntries = buildSenderProgrammingEntries(devices, activeGatewayBlocks, pct14GatewayBaseId);\n  const senderGatewaySummary = activeGatewayBlocks\n',
+              'sender programming uses generated snapshot',
+          )
+
+          path.write_text(text, encoding='utf-8')
+
+          test_path = Path('tests/yaml_generation_regression.js')
+          test = test_path.read_text(encoding='utf-8')
+          anchor = "assert(allGatewaySenderEntries.some(entry => entry.sender_id === 'FF-A6-07-0B'), 'Dynamic FAM-USB sender is included');\n"
+          addition = anchor + "assertIncludes(appSource, 'const [generatedGatewayBlocks, setGeneratedGatewayBlocks] = useState([]);', 'Generated YAML gateway snapshot is stored');\nassertIncludes(appSource, 'yaml && generatedGatewayBlocks.length', 'Sender programming uses the generated YAML gateway snapshot');\n"
+          if test.count(anchor) != 1:
+              raise RuntimeError(f'test anchor: expected 1 match, found {test.count(anchor)}')
+          test = test.replace(anchor, addition, 1)
+          test_path.write_text(test, encoding='utf-8')
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run regression tests
+        run: npm test
+
+      - name: Remove one-time workflow and commit fix
+        shell: bash
+        run: |
+          rm -f .github/workflows/fix-fam-usb-sender-snapshot.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/App.jsx tests/yaml_generation_regression.js .github/workflows/fix-fam-usb-sender-snapshot.yml
+          git commit -m "Fix FAM-USB sender planning from generated YAML snapshot"
+          git push origin HEAD:agent/basic-sender-write-1.0.95
