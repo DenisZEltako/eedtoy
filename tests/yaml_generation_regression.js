@@ -123,6 +123,8 @@ const allGatewaySenderEntries = api.buildSenderProgrammingEntries([{name:'FSB14 
 assert(allGatewaySenderEntries.length === 2, 'FAM14 and FGW14 duplicate controller IDs are programmed only once');
 assert(allGatewaySenderEntries.some(entry => entry.sender_id === '00-00-B0-0B'), 'Internal Series-14 controller sender is included');
 assert(allGatewaySenderEntries.some(entry => entry.sender_id === 'FF-A6-07-0B'), 'Dynamic FAM-USB sender is included');
+assertIncludes(appSource, 'const [generatedGatewayBlocks, setGeneratedGatewayBlocks] = useState([]);', 'Generated YAML gateway snapshot is stored');
+assertIncludes(appSource, 'yaml && generatedGatewayBlocks.length', 'Sender programming uses the generated YAML gateway snapshot');
 const roomControllerDedup = api.deduplicateExportDevices([
   { name: 'FTR FHK', eep: 'A5-10-06-FTR-FHK', dev_id: '01-02-03-20' },
   { name: 'FTR TF61', eep: 'A5-38-08-FTR-TF61', dev_id: '01-02-03-20' },

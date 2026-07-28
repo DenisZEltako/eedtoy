@@ -736,6 +736,7 @@ export default function App() {
   const [editIdx, setEditIdx] = useState(null);
   const [errors, setErrors]   = useState({});
   const [yaml, setYaml]       = useState("");
+  const [generatedGatewayBlocks, setGeneratedGatewayBlocks] = useState([]);
   const [copied, setCopied]   = useState(false);
   const [ports, setPorts]     = useState([]);
   const [detecting, setDetecting] = useState(false);
@@ -777,6 +778,7 @@ export default function App() {
       form,
       editIdx,
       yaml,
+      generatedGatewayBlocks,
       importFam14Gateway,
       importFgw14Gateway,
       pct14DetectedFam14,
@@ -865,8 +867,11 @@ export default function App() {
     if (loadedImportFgw14Gateway && loadedPct14DetectedFgw14 && loadedPct14GatewayBaseId) {
       activeLoadedGateways.push({ type:"fgw14usb", base_id:loadedPct14GatewayBaseId, source:"pct14-fgw14" });
     }
+    const loadedGatewayBlocks = Array.isArray(state.generatedGatewayBlocks) && state.generatedGatewayBlocks.length
+      ? state.generatedGatewayBlocks
+      : orderedGatewayBlocks(loadedGateway, activeLoadedGateways);
     const loadedYaml = loadedDevices.length > 0
-      ? generateYaml(loadedGateway, loadedDevices, activeLoadedGateways, loadedPct14GatewayBaseId, language)
+      ? generateYaml(loadedGateway, loadedDevices, loadedGatewayBlocks.slice(1), loadedPct14GatewayBaseId, language)
       : "";
 
     setGateway(loadedGateway);
@@ -875,6 +880,7 @@ export default function App() {
     setForm(state.form && typeof state.form === "object" ? { ...emptyForm, ...state.form } : emptyForm);
     setEditIdx(loadedEditIdx);
     setYaml(loadedYaml);
+    setGeneratedGatewayBlocks(loadedGatewayBlocks);
     setImportFam14Gateway(loadedImportFam14Gateway);
     setImportFgw14Gateway(loadedImportFgw14Gateway);
     setPct14DetectedFam14(loadedPct14DetectedFam14);
@@ -1219,13 +1225,20 @@ export default function App() {
   // the YAML header and explanatory comments remained in the previous language.
   useEffect(() => {
     if (!yaml || devices.length === 0) return;
-    setYaml(generateYaml(gateway, devices, buildActiveExtraGateways(), pct14GatewayBaseId, language));
+    const snapshot = generatedGatewayBlocks.length
+      ? generatedGatewayBlocks
+      : orderedGatewayBlocks(gateway, buildActiveExtraGateways());
+    const [snapshotPrimary, ...snapshotExtras] = snapshot;
+    setYaml(generateYaml(snapshotPrimary || gateway, devices, snapshotExtras, pct14GatewayBaseId, language));
   }, [language]);
 
   const handleGenerate = () => {
     const normalized = normalizeFksSenderAssignments(gateway, devices, pct14GatewayBaseId);
     if (normalized.changed || normalized.devices.length !== devices.length) setDevices(normalized.devices);
-    setYaml(generateYaml(gateway, normalized.devices, buildActiveExtraGateways(), pct14GatewayBaseId, language));
+    const gatewaySnapshot = orderedGatewayBlocks(gateway, buildActiveExtraGateways()).map(gw => ({ ...gw }));
+    const [snapshotPrimary, ...snapshotExtras] = gatewaySnapshot;
+    setGeneratedGatewayBlocks(gatewaySnapshot);
+    setYaml(generateYaml(snapshotPrimary || gateway, normalized.devices, snapshotExtras, pct14GatewayBaseId, language));
     setStep(3);
   };
   const handleCopy = () => { navigator.clipboard.writeText(yaml); setCopied(true); setTimeout(()=>setCopied(false),2000); };
@@ -1236,7 +1249,10 @@ export default function App() {
     URL.revokeObjectURL(u);
   };
 
-  const activeGatewayBlocks = orderedGatewayBlocks(gateway, buildActiveExtraGateways());
+  const currentGatewayBlocks = orderedGatewayBlocks(gateway, buildActiveExtraGateways());
+  const activeGatewayBlocks = yaml && generatedGatewayBlocks.length
+    ? generatedGatewayBlocks
+    : currentGatewayBlocks;
   const senderProgrammingEntries = buildSenderProgrammingEntries(devices, activeGatewayBlocks, pct14GatewayBaseId);
   const senderGatewaySummary = activeGatewayBlocks
     .map(gw => `${gw.type}${gw.base_id ? ` (${gw.base_id})` : ""}`)
