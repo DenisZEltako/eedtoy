@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.95
+
+- Ein Klick prüft und programmiert jetzt die erforderlichen Sender-IDs aller Gateways, die in die YAML exportiert werden.
+- FAM14 und FGW14-USB werden auf den gemeinsamen internen `00-00-B0-xx`-Sender dedupliziert.
+- Die Sender-ID eines FAM-USB wird weiterhin dynamisch aus dessen tatsächlicher Base-ID und dem Aktor-/Kanaloffset gebildet.
+- Mehrere erforderliche Sender für denselben Series-14-Aktorkanal bleiben in der Schreibliste erhalten und werden einzeln geprüft.
+- Bus-COM-Port, Gatewayübersicht und Schreibschaltfläche sind im YAML-Schreibbereich auf gleicher Höhe dargestellt.
+- Python-Regressionstest für mehrere Sender pro Aktorkanal in den normalen Testlauf aufgenommen.
+
 ## 1.0.94
 
 - Automatische Gateway-Erkennung für FAM14, FAM-USB und FGW14-USB stabilisiert.

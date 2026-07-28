@@ -1,6 +1,6 @@
 {
   "name": "eedtoy",
-  "version": "1.0.94",
+  "version": "1.0.95",
   "description": "EEDTOY - ELTAKO EnOcean Device to YAML Generator (privat entwickelt)",
   "author": "D. Zirnbauer",
   "main": "electron/main.js",
@@ -16,7 +16,7 @@
     "build:installer": "set CSC_IDENTITY_AUTO_DISCOVERY=false&& vite build && electron-builder --win nsis --x64 --publish never",
     "build:all": "npm run python:embed && npm run build:installer",
     "python:bootstrap": "powershell -NoProfile -ExecutionPolicy Bypass -File python/bootstrap_runtime_windows.ps1",
-    "test": "node tests/i18n_dynamic_text_regression.js && node tests/electron_i18n_regression.js && node tests/yaml_generation_regression.js && node tests/electron_ipc_contract_regression.js"
+    "test": "node tests/i18n_dynamic_text_regression.js && node tests/electron_i18n_regression.js && node tests/yaml_generation_regression.js && node tests/electron_ipc_contract_regression.js && python tests/test_write_senders_patch.py"
   },
   "build": {
     "appId": "io.github.deniszeltako.eedtoy",

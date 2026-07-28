@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getStoredLanguage, storeLanguage, translate, translateDeviceLabel, translateGroup, translatePlatform, translateRuntimeText } from "./i18n.js";
 
-const APP_VERSION = "1.0.94";
+const APP_VERSION = "1.0.95";
 
 // ─────────────────────────────────────────────────────────────────
 // EEP Database — Eltako Home Assistant Integration
@@ -511,16 +511,27 @@ function busDeviceIdForProgramming(device, pct14BaseId) {
   return addToBaseId(pct14BaseId, offset);
 }
 
-function buildSenderProgrammingEntries(devices, targetGateway, pct14BaseId) {
-  if (!targetGateway || !pct14BaseId) return [];
+function buildSenderProgrammingEntries(devices, targetGateways, pct14BaseId) {
+  const gateways = Array.isArray(targetGateways) ? targetGateways.filter(Boolean) : [targetGateways].filter(Boolean);
+  if (!gateways.length || !pct14BaseId) return [];
+
   const entries = [];
+  const seen = new Set();
   for (const d of devices || []) {
     const p = profileFor(d.eep);
     if (!p.needs_sender || !isPct14ImportedDevice(d)) continue;
+
     const device_id = busDeviceIdForProgramming(d, pct14BaseId);
-    const sender_id = senderIdForGateway(d, targetGateway, pct14BaseId);
-    const sender_eep = d.sender_eep || p.sender_eep || p.eep_out || d.eep;
-    if (device_id && sender_id && sender_eep) {
+    const sender_eep = String(d.sender_eep || p.sender_eep || p.eep_out || d.eep || "").trim().toUpperCase();
+    if (!device_id || !sender_eep) continue;
+
+    for (const targetGateway of gateways) {
+      const sender_id = senderIdForGateway(d, targetGateway, pct14BaseId);
+      if (!sender_id) continue;
+      const requirementKey = `${device_id}|${sender_id}|${sender_eep}`;
+      if (seen.has(requirementKey)) continue;
+      seen.add(requirementKey);
+
       entries.push({
         device_id,
         sender_id,
@@ -529,6 +540,8 @@ function buildSenderProgrammingEntries(devices, targetGateway, pct14BaseId) {
         device_type: deviceTypeForDevice(d),
         platform: d.platform || p.platform || "",
         name: d.name || device_id,
+        source_gateway_type: targetGateway.type || "",
+        source_gateway_base_id: targetGateway.base_id || "",
       });
     }
   }
@@ -1224,10 +1237,14 @@ export default function App() {
   };
 
   const activeGatewayBlocks = orderedGatewayBlocks(gateway, buildActiveExtraGateways());
-  const selectedWriteGateway = activeGatewayBlocks.find(gw => gatewayKey(gw) === writeTargetGatewayKey) || activeGatewayBlocks[0];
-  const senderProgrammingEntries = buildSenderProgrammingEntries(devices, selectedWriteGateway, pct14GatewayBaseId);
-  const busWritePort = (writeBusPort || gateway.serial_path || "").trim();
-  const busWriteGatewayConnected = ["fam14", "fgw14usb"].includes(gateway.type) && Boolean(busWritePort);
+  const senderProgrammingEntries = buildSenderProgrammingEntries(devices, activeGatewayBlocks, pct14GatewayBaseId);
+  const senderGatewaySummary = activeGatewayBlocks
+    .map(gw => `${gw.type}${gw.base_id ? ` (${gw.base_id})` : ""}`)
+    .join(" · ");
+  const hasRs485Gateway = activeGatewayBlocks.some(gw => ["fam14", "fgw14usb"].includes(gw.type));
+  const defaultBusWritePort = ["fam14", "fgw14usb"].includes(gateway.type) ? gateway.serial_path : "";
+  const busWritePort = (writeBusPort || defaultBusWritePort || "").trim();
+  const busWriteGatewayConnected = hasRs485Gateway && Boolean(busWritePort);
   const busWriteHint = t("senderWrite.hint");
   const canWriteSenderIds = !writingSenders && busWriteGatewayConnected && senderProgrammingEntries.length > 0;
 
@@ -1236,12 +1253,12 @@ export default function App() {
       setWriteSenderMsg(t("senderWrite.desktopOnly"));
       return;
     }
-    if (!selectedWriteGateway) {
+    if (!activeGatewayBlocks.length) {
       setWriteSenderMsg(t("senderWrite.noGateway"));
       return;
     }
     const port = busWritePort;
-    if (!["fam14", "fgw14usb"].includes(gateway.type)) {
+    if (!hasRs485Gateway) {
       setWriteSenderMsg(t("senderWrite.wrongGateway"));
       return;
     }
@@ -1257,7 +1274,7 @@ export default function App() {
       setWriteSenderMsg(t("senderWrite.noEntries"));
       return;
     }
-    const ok = window.confirm(t("senderWrite.confirm", { port, gateway: `${selectedWriteGateway.type} ${selectedWriteGateway.base_id || ""}`.trim(), count: senderProgrammingEntries.length }));
+    const ok = window.confirm(t("senderWrite.confirm", { port, gateway: senderGatewaySummary || "-", count: senderProgrammingEntries.length }));
     if (!ok) return;
 
     setWritingSenders(true);
@@ -1267,7 +1284,7 @@ export default function App() {
       portPath: port,
       gatewayType: "fam14",
       baudRate: 57600,
-      targetGateway: selectedWriteGateway,
+      targetGateways: activeGatewayBlocks,
       entries: senderProgrammingEntries,
     });
     setWritingSenders(false);
@@ -1735,23 +1752,24 @@ export default function App() {
                 <span className="statusPill">{t("common.senderCount", { count: senderProgrammingEntries.length })}</span>
               </div>
               <div title={!busWriteGatewayConnected ? busWriteHint : ""} style={{opacity:busWriteGatewayConnected?1:.48,cursor:busWriteGatewayConnected?"default":"not-allowed"}}>
-                <div style={{display:"grid",gridTemplateColumns:"minmax(210px,1fr) minmax(210px,1fr) auto",gap:".65rem",alignItems:"end"}}>
+                <div style={{display:"grid",gridTemplateColumns:"minmax(210px,1fr) minmax(260px,1.2fr) auto",gap:".65rem",alignItems:"start"}}>
                   <div>
                     <label>{t("yaml.busComPort")}</label>
-                    <input disabled={!busWriteGatewayConnected && !["fam14","fgw14usb"].includes(gateway.type)} value={writeBusPort || gateway.serial_path} onChange={e=>setWriteBusPort(e.target.value)} placeholder={t("gateway.serialPortPlaceholder")} list="serial-port-list"/>
+                    <input disabled={!hasRs485Gateway} value={writeBusPort || defaultBusWritePort} onChange={e=>setWriteBusPort(e.target.value)} placeholder={t("gateway.serialPortPlaceholder")} list="serial-port-list" style={{height:42,minHeight:42}}/>
                     <div style={{fontSize:".62rem",color:"#6b7280",marginTop:".2rem"}}>{t("yaml.busComPortHelp")}</div>
                   </div>
                   <div>
                     <label>{t("yaml.senderIdsFromGateway")}</label>
-                    <select disabled={!busWriteGatewayConnected} value={gatewayKey(selectedWriteGateway)} onChange={e=>setWriteTargetGatewayKey(e.target.value)}>
-                      {activeGatewayBlocks.map((gw, idx)=>(
-                        <option key={`${gatewayKey(gw)}-${idx}`} value={gatewayKey(gw)}>{gw.type} {gw.base_id ? `(${gw.base_id})` : ""}</option>
-                      ))}
-                    </select>
+                    <div style={{height:42,minHeight:42,display:"flex",alignItems:"center",padding:"0 .75rem",border:"1px solid #b9c7d3",borderRadius:7,background:"#f7f9fb",fontSize:".78rem",color:"#405061",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={senderGatewaySummary}>
+                      {senderGatewaySummary || "-"}
+                    </div>
                   </div>
-                  <button className="btn pri" onClick={handleWriteSenderIds} disabled={!canWriteSenderIds} style={{whiteSpace:"nowrap"}} title={!busWriteGatewayConnected ? busWriteHint : ""}>
-                    {writingSenders ? t("yaml.writing") : t("yaml.writeToActuators")}
-                  </button>
+                  <div>
+                    <label style={{visibility:"hidden"}}>{t("yaml.writeToActuators")}</label>
+                    <button className="btn pri" onClick={handleWriteSenderIds} disabled={!canWriteSenderIds} style={{whiteSpace:"nowrap",height:42,minHeight:42}} title={!busWriteGatewayConnected ? busWriteHint : ""}>
+                      {writingSenders ? t("yaml.writing") : t("yaml.writeToActuators")}
+                    </button>
+                  </div>
                 </div>
               </div>
               {!busWriteGatewayConnected&&<div style={{fontSize:".68rem",marginTop:".65rem",padding:".5rem .7rem",borderRadius:5,background:"#fff7ed",color:"#9a3412",border:"1px solid #fed7aa"}}>{t("yaml.writeDisabled")}</div>}
