@@ -22,8 +22,12 @@ jobs:
           ref: agent/basic-sender-write-1.0.95
           fetch-depth: 0
 
-      - name: Python-Migration ausführen
-        run: python tools/apply_basic_sender_write_1_0_95.py
+      - name: Migration korrigieren und ausführen
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i "s/replace_all_exact(text, '1.0.94', '1.0.95', 2, 'test version references')/replace_all_exact(text, '1.0.94', '1.0.95', 3, 'test version references')/" tools/apply_basic_sender_write_1_0_95.py
+          python tools/apply_basic_sender_write_1_0_95.py
 
       - name: Node.js einrichten
         uses: actions/setup-node@v4
