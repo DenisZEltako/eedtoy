@@ -18,11 +18,15 @@ def replace_function(text: str) -> str:
     sender = _sender_bytes_from_id(sender_id)
     upper_type = str(device_type or "").upper()
     start_line = 16 if "F4HK14" in upper_type else 12
+    preferred_line = start_line + int(channel or 0)
     memory_size = int(getattr(dev, "memory_size", 0) or 0)
-    if memory_size <= start_line or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
+    if preferred_line >= memory_size or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
         return None
 
     expected_line = sender + bytes((0, 65, 1 << int(channel or 0), 0))
+
+    # Keep the original channel-specific controller line for the first sender.
+    # Additional controller senders for the same channel use another free line.
     first_empty = None
     for memory_line in range(start_line, memory_size):
         current_line = await dev.read_mem_line(memory_line)
@@ -31,10 +35,12 @@ def replace_function(text: str) -> str:
         if not any(current_line) and first_empty is None:
             first_empty = memory_line
 
-    if first_empty is None:
+    preferred_current = await dev.read_mem_line(preferred_line)
+    target_line = preferred_line if not any(preferred_current) else first_empty
+    if target_line is None:
         raise RuntimeError("Kein freier FHK-Controller-Speicherplatz für einen weiteren Sender gefunden")
 
-    await dev.write_mem_line(first_empty, expected_line)
+    await dev.write_mem_line(target_line, expected_line)
     return True
 '''
     return text[:start] + replacement + text[end:]
