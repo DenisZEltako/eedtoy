@@ -210,25 +210,33 @@ async def _ensure_programmed_fhk_controller(
     channel: int,
     device_type: str,
 ) -> Optional[bool]:
-    """Program the fixed smart-home-controller line used by FHK14/F4HK14/FAE14SSR."""
+    """Program one or more smart-home-controller senders for FHK14/F4HK14/FAE14SSR."""
     sender = _sender_bytes_from_id(sender_id)
     upper_type = str(device_type or "").upper()
     start_line = 16 if "F4HK14" in upper_type else 12
-    memory_line = start_line + int(channel or 0)
+    preferred_line = start_line + int(channel or 0)
     memory_size = int(getattr(dev, "memory_size", 0) or 0)
-    if memory_line >= memory_size or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
+    if preferred_line >= memory_size or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
         return None
 
     expected_line = sender + bytes((0, 65, 1 << int(channel or 0), 0))
-    current_line = await dev.read_mem_line(memory_line)
-    if current_line == expected_line:
-        return False
-    if any(current_line):
-        current_sender = norm_id("-".join(f"{b:02X}" for b in current_line[:4]))
-        raise RuntimeError(
-            f"FHK-Controller-Speicherzeile {memory_line} ist bereits mit Sender {current_sender} belegt"
-        )
-    await dev.write_mem_line(memory_line, expected_line)
+
+    # Keep the original channel-specific controller line for the first sender.
+    # Additional controller senders for the same channel use another free line.
+    first_empty = None
+    for memory_line in range(start_line, memory_size):
+        current_line = await dev.read_mem_line(memory_line)
+        if current_line == expected_line:
+            return False
+        if not any(current_line) and first_empty is None:
+            first_empty = memory_line
+
+    preferred_current = await dev.read_mem_line(preferred_line)
+    target_line = preferred_line if not any(preferred_current) else first_empty
+    if target_line is None:
+        raise RuntimeError("Kein freier FHK-Controller-Speicherplatz für einen weiteren Sender gefunden")
+
+    await dev.write_mem_line(target_line, expected_line)
     return True
 
 

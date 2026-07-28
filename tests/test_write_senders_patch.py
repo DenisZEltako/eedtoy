@@ -24,6 +24,18 @@ class FakeDevice:
         self.memory[line] = value
 
 
+async def test_fhk_multiple_controller_senders():
+    dev = FakeDevice(memory_size=24)
+    first = module._sender_bytes_from_id("00-00-B0-01") + bytes((0, 65, 1, 0))
+    second = module._sender_bytes_from_id("FF-A6-07-01") + bytes((0, 65, 1, 0))
+    dev.memory[12] = first
+
+    assert await module._ensure_programmed_fhk_controller(dev, "00-00-B0-01", 0, "FHK14") is False
+    assert await module._ensure_programmed_fhk_controller(dev, "FF-A6-07-01", 0, "FHK14") is True
+    assert dev.memory[13] == second
+    assert await module._ensure_programmed_fhk_controller(dev, "FF-A6-07-01", 0, "FHK14") is False
+
+
 async def test_memory_layouts():
     fsr = FakeDevice(20)
     assert await module._ensure_programmed_fsr14ssr(fsr, "00-00-B0-15", 0) is True
@@ -77,5 +89,6 @@ if __name__ == "__main__":
     test_target_addresses()
     test_full_scan_removed()
     test_multiple_senders_per_device_are_preserved()
+    asyncio.run(test_fhk_multiple_controller_senders())
     asyncio.run(test_memory_layouts())
     print("R7 sender-write patch tests passed.")
