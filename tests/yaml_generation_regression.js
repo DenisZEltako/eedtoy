@@ -27,7 +27,7 @@ const start = appSource.indexOf('const APP_VERSION');
 const end = appSource.indexOf('export default function App()');
 if (start < 0 || end < 0) throw new Error('Could not isolate App.jsx helper functions');
 
-const helperSource = `${appSource.slice(start, end)}\nthis.__api = { APP_VERSION, EEP_DB, generateYaml, normalizeFksSenderAssignments, getPct14Mapping, deduplicateExportDevices };`;
+const helperSource = `${appSource.slice(start, end)}\nthis.__api = { APP_VERSION, EEP_DB, generateYaml, normalizeFksSenderAssignments, getPct14Mapping, deduplicateExportDevices, buildSenderProgrammingEntries };`;
 const context = {
   console,
   Date,
@@ -39,7 +39,7 @@ vm.createContext(context);
 vm.runInContext(helperSource, context, { filename: 'src/App.helpers.jsx' });
 const api = context.__api;
 
-assert(api.APP_VERSION === '1.0.94', 'Application version is 1.0.94');
+assert(api.APP_VERSION === '1.0.95', 'Application version is 1.0.95');
 assert(Object.keys(api.EEP_DB).length === 64, 'Approved device profile count is 64');
 
 const gateway = {
@@ -99,7 +99,7 @@ const devices = [
 ];
 
 const deYaml = api.generateYaml(gateway, devices, [], '', 'de');
-assertIncludes(deYaml, '# Version: 1.0.94', 'German YAML version header');
+assertIncludes(deYaml, '# Version: 1.0.95', 'German YAML version header');
 assertIncludes(deYaml, '# Generiert:', 'German YAML timestamp label');
 assertIncludes(deYaml, 'device_type: fam14', 'Gateway type export');
 assertIncludes(deYaml, 'base_id: FF-AA-BB-00', 'Gateway base ID export');
@@ -118,6 +118,13 @@ assertIncludes(deYaml, 'name: "FDG14 DALI"', 'FDG14 device export');
 assertIncludes(deYaml, 'dimming_speed: 0', 'FDG14 uses actuator-internal dimming speed by default');
 assertIncludes(deYaml, 'eep: "A5-38-08"', 'FDG14 A5-38-08 export');
 assert(api.getPct14Mapping('FDG14')?.eep === 'A5-38-08-FDG14', 'PCT14 maps FDG14 to the dedicated profile');
+
+const allGatewaySenderEntries = api.buildSenderProgrammingEntries([{name:'FSB14 Kanal 1',eep:'G5-3F-7F',platform:'cover',dev_id:'00-00-00-0B',sender_id:'00-00-B0-0B',sender_eep:'H5-3F-7F',room:'PCT14 Adresse 11 · Kanal 1',device_type:'FSB14'}],[{type:'fam14',base_id:'FF-F2-6C-80'},{type:'fgw14usb',base_id:'FF-F2-6C-80'},{type:'fam-usb',base_id:'FF-A6-07-00'}],'FF-F2-6C-80');
+assert(allGatewaySenderEntries.length === 2, 'FAM14 and FGW14 duplicate controller IDs are programmed only once');
+assert(allGatewaySenderEntries.some(entry => entry.sender_id === '00-00-B0-0B'), 'Internal Series-14 controller sender is included');
+assert(allGatewaySenderEntries.some(entry => entry.sender_id === 'FF-A6-07-0B'), 'Dynamic FAM-USB sender is included');
+assertIncludes(appSource, 'const [generatedGatewayBlocks, setGeneratedGatewayBlocks] = useState([]);', 'Generated YAML gateway snapshot is stored');
+assertIncludes(appSource, 'yaml && generatedGatewayBlocks.length', 'Sender programming uses the generated YAML gateway snapshot');
 const roomControllerDedup = api.deduplicateExportDevices([
   { name: 'FTR FHK', eep: 'A5-10-06-FTR-FHK', dev_id: '01-02-03-20' },
   { name: 'FTR TF61', eep: 'A5-38-08-FTR-TF61', dev_id: '01-02-03-20' },

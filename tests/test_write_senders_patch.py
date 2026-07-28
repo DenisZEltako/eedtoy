@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import asyncio
 import importlib.util
+import json
+import tempfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "python" / "write_senders.py"
@@ -20,6 +22,18 @@ class FakeDevice:
 
     async def write_mem_line(self, line, value):
         self.memory[line] = value
+
+
+async def test_fhk_multiple_controller_senders():
+    dev = FakeDevice(memory_size=24)
+    first = module._sender_bytes_from_id("00-00-B0-01") + bytes((0, 65, 1, 0))
+    second = module._sender_bytes_from_id("FF-A6-07-01") + bytes((0, 65, 1, 0))
+    dev.memory[12] = first
+
+    assert await module._ensure_programmed_fhk_controller(dev, "00-00-B0-01", 0, "FHK14") is False
+    assert await module._ensure_programmed_fhk_controller(dev, "FF-A6-07-01", 0, "FHK14") is True
+    assert dev.memory[13] == second
+    assert await module._ensure_programmed_fhk_controller(dev, "FF-A6-07-01", 0, "FHK14") is False
 
 
 async def test_memory_layouts():
@@ -60,8 +74,21 @@ def test_full_scan_removed():
     assert "_ensure_programmed_fhk_controller" in source
 
 
+def test_multiple_senders_per_device_are_preserved():
+    payload = {"entries": [{"device_id":"FF-F2-6C-8B","sender_id":"00-00-B0-0B","sender_eep":"H5-3F-7F","name":"FSB14 Kanal 1"},{"device_id":"FF-F2-6C-8B","sender_id":"FF-A6-07-0B","sender_eep":"H5-3F-7F","name":"FSB14 Kanal 1"},{"device_id":"FF-F2-6C-8B","sender_id":"00-00-B0-0B","sender_eep":"H5-3F-7F","name":"duplicate"}]}
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "senders.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        sender_map = module.load_sender_map(str(path))
+    entries = sender_map["FF-F2-6C-8B"]
+    assert len(entries) == 2
+    assert {entry["sender"]["id"] for entry in entries} == {"00-00-B0-0B", "FF-A6-07-0B"}
+
+
 if __name__ == "__main__":
     test_target_addresses()
     test_full_scan_removed()
+    test_multiple_senders_per_device_are_preserved()
+    asyncio.run(test_fhk_multiple_controller_senders())
     asyncio.run(test_memory_layouts())
     print("R7 sender-write patch tests passed.")

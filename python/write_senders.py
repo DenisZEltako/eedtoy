@@ -56,10 +56,11 @@ def _id_to_int(value: str) -> Optional[int]:
         return None
 
 
-def load_sender_map(path: str) -> Dict[str, Dict[str, Any]]:
+def load_sender_map(path: str) -> Dict[str, List[Dict[str, Any]]]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    result: Dict[str, Dict[str, Any]] = {}
+    result: Dict[str, List[Dict[str, Any]]] = {}
+    seen: Set[tuple[str, str, str]] = set()
     for item in data.get("entries", data if isinstance(data, list) else []):
         device_id = norm_id(item.get("device_id") or item.get("id") or "")
         sender_id = norm_id(item.get("sender_id") or "")
@@ -67,13 +68,19 @@ def load_sender_map(path: str) -> Dict[str, Dict[str, Any]]:
         name = str(item.get("name") or "")
         if not device_id or not sender_id or not sender_eep:
             continue
-        result[device_id] = {
+        key = (device_id, sender_id, sender_eep)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.setdefault(device_id, []).append({
             "sender": {"id": sender_id, "eep": sender_eep},
             "name": name,
             "device_eep": str(item.get("device_eep") or item.get("device_eep_out") or "").strip().upper(),
             "device_type": str(item.get("device_type") or "").strip(),
             "platform": str(item.get("platform") or "").strip(),
-        }
+            "source_gateway_type": str(item.get("source_gateway_type") or "").strip(),
+            "source_gateway_base_id": norm_id(item.get("source_gateway_base_id") or ""),
+        })
     return result
 
 
@@ -203,29 +210,37 @@ async def _ensure_programmed_fhk_controller(
     channel: int,
     device_type: str,
 ) -> Optional[bool]:
-    """Program the fixed smart-home-controller line used by FHK14/F4HK14/FAE14SSR."""
+    """Program one or more smart-home-controller senders for FHK14/F4HK14/FAE14SSR."""
     sender = _sender_bytes_from_id(sender_id)
     upper_type = str(device_type or "").upper()
     start_line = 16 if "F4HK14" in upper_type else 12
-    memory_line = start_line + int(channel or 0)
+    preferred_line = start_line + int(channel or 0)
     memory_size = int(getattr(dev, "memory_size", 0) or 0)
-    if memory_line >= memory_size or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
+    if preferred_line >= memory_size or not hasattr(dev, "read_mem_line") or not hasattr(dev, "write_mem_line"):
         return None
 
     expected_line = sender + bytes((0, 65, 1 << int(channel or 0), 0))
-    current_line = await dev.read_mem_line(memory_line)
-    if current_line == expected_line:
-        return False
-    if any(current_line):
-        current_sender = norm_id("-".join(f"{b:02X}" for b in current_line[:4]))
-        raise RuntimeError(
-            f"FHK-Controller-Speicherzeile {memory_line} ist bereits mit Sender {current_sender} belegt"
-        )
-    await dev.write_mem_line(memory_line, expected_line)
+
+    # Keep the original channel-specific controller line for the first sender.
+    # Additional controller senders for the same channel use another free line.
+    first_empty = None
+    for memory_line in range(start_line, memory_size):
+        current_line = await dev.read_mem_line(memory_line)
+        if current_line == expected_line:
+            return False
+        if not any(current_line) and first_empty is None:
+            first_empty = memory_line
+
+    preferred_current = await dev.read_mem_line(preferred_line)
+    target_line = preferred_line if not any(preferred_current) else first_empty
+    if target_line is None:
+        raise RuntimeError("Kein freier FHK-Controller-Speicherplatz für einen weiteren Sender gefunden")
+
+    await dev.write_mem_line(target_line, expected_line)
     return True
 
 
-async def ensure_programmed_for_device(fam14_base_id_int: int, dev: Any, sender_map: Dict[str, Any]) -> List[Dict[str, Any]]:
+async def ensure_programmed_for_device(fam14_base_id_int: int, dev: Any, sender_map: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     from eltakobus.device import DimmerStyle, HasProgrammableRPS
     from eltakobus.eep import EEP
     from eltakobus.util import b2s
@@ -242,82 +257,60 @@ async def ensure_programmed_for_device(fam14_base_id_int: int, dev: Any, sender_
 
     for channel in range(size):
         device_ext_id = b2s((fam14_base_id_int + address + channel).to_bytes(4, "big"))
-        entry = sender_map.get(device_ext_id)
-        if not entry or "sender" not in entry:
-            continue
-
-        sender_id = norm_id(entry["sender"].get("id", ""))
-        sender_eep = str(entry["sender"].get("eep", "")).strip().upper()
-        device_eep = str(entry.get("device_eep") or "").strip().upper()
-        entry_name = str(entry.get("name") or "")
-        entry_type = _entry_device_type(entry)
-        combined_label = f"{entry_type} {entry_name}"
-        display_name = _device_display_name(entry, dev_type, device_ext_id)
-        is_frgbw = sender_eep == "07-37-F7" or device_eep == "07-37-F7" or "FRGBW" in combined_label.upper()
-        is_fsr14ssr = "FSR14SSR" in combined_label.upper()
-        is_fhk = any(token in combined_label.upper() for token in ("FHK14", "F4HK14", "FAE14SSR"))
-        if not sender_id or not sender_eep:
-            continue
-
-        retry = 3
-        last_exception: Optional[Exception] = None
-        update_result = None
-
-        while retry > 0:
-            try:
-                if is_frgbw:
-                    update_result = await _ensure_programmed_controller_profile(dev, sender_id, channel)
-                elif is_fsr14ssr:
-                    update_result = await _ensure_programmed_fsr14ssr(dev, sender_id, channel)
-                elif is_fhk and sender_eep == "A5-10-06":
-                    update_result = await _ensure_programmed_fhk_controller(dev, sender_id, channel, entry_type)
-                elif isinstance(dev, HasProgrammableRPS) or isinstance(dev, DimmerStyle) or hasattr(dev, "ensure_programmed"):
-                    sender_address = AddressExpression.parse(sender_id)
-                    eep_profile = EEP.find(sender_eep)
-                    update_result = await dev.ensure_programmed(channel, sender_address, eep_profile)
-                else:
-                    update_result = None
-                last_exception = None
-                await asyncio.sleep(0.05)
-                break
-            except (WriteError, TimeoutError, Exception) as e:
-                last_exception = e
-                retry -= 1
-                log("retry", 3 - retry, "failed", dev_type, device_ext_id, sender_id, sender_eep, repr(e))
-                await asyncio.sleep(0.15)
-
-        if last_exception is not None:
-            events.append({
-                "status": "error",
-                "device_id": device_ext_id,
-                "device_type": entry_type,
-                "sender_id": sender_id,
-                "sender_eep": sender_eep,
-                "message": f"Fehler beim Schreiben von {sender_id} ({sender_eep}) in {display_name}: {type(last_exception).__name__}: {last_exception}",
-            })
-            continue
-
-        if update_result is None:
-            status = "unsupported"
-            message = f"Update für Gerät {display_name} nicht unterstützt."
-        elif update_result is True:
-            status = "updated"
-            message = f"Home-Assistant Sender-ID {sender_id} für EEP {sender_eep} in {display_name} geschrieben."
-        else:
-            status = "exists"
-            message = f"Sender-ID {sender_id} für EEP {sender_eep} in {display_name} existiert bereits."
-
-        events.append({
-            "status": status,
-            "device_id": device_ext_id,
-            "device_type": entry_type,
-            "sender_id": sender_id,
-            "sender_eep": sender_eep,
-            "message": message,
-        })
-        log(message)
+        entries = sender_map.get(device_ext_id) or []
+        for entry in entries:
+            sender_id = norm_id(entry.get("sender", {}).get("id", ""))
+            sender_eep = str(entry.get("sender", {}).get("eep", "")).strip().upper()
+            device_eep = str(entry.get("device_eep") or "").strip().upper()
+            entry_name = str(entry.get("name") or "")
+            entry_type = _entry_device_type(entry)
+            combined_label = f"{entry_type} {entry_name}"
+            display_name = _device_display_name(entry, dev_type, device_ext_id)
+            is_frgbw = sender_eep == "07-37-F7" or device_eep == "07-37-F7" or "FRGBW" in combined_label.upper()
+            is_fsr14ssr = "FSR14SSR" in combined_label.upper()
+            is_fhk = any(token in combined_label.upper() for token in ("FHK14", "F4HK14", "FAE14SSR"))
+            if not sender_id or not sender_eep:
+                continue
+            retry = 3
+            last_exception: Optional[Exception] = None
+            update_result = None
+            while retry > 0:
+                try:
+                    if is_frgbw:
+                        update_result = await _ensure_programmed_controller_profile(dev, sender_id, channel)
+                    elif is_fsr14ssr:
+                        update_result = await _ensure_programmed_fsr14ssr(dev, sender_id, channel)
+                    elif is_fhk and sender_eep == "A5-10-06":
+                        update_result = await _ensure_programmed_fhk_controller(dev, sender_id, channel, entry_type)
+                    elif isinstance(dev, HasProgrammableRPS) or isinstance(dev, DimmerStyle) or hasattr(dev, "ensure_programmed"):
+                        sender_address = AddressExpression.parse(sender_id)
+                        eep_profile = EEP.find(sender_eep)
+                        update_result = await dev.ensure_programmed(channel, sender_address, eep_profile)
+                    else:
+                        update_result = None
+                    last_exception = None
+                    await asyncio.sleep(0.05)
+                    break
+                except (WriteError, TimeoutError, Exception) as e:
+                    last_exception = e
+                    retry -= 1
+                    log("retry", 3 - retry, "failed", dev_type, device_ext_id, sender_id, sender_eep, repr(e))
+                    await asyncio.sleep(0.15)
+            if last_exception is not None:
+                events.append({"status": "error", "device_id": device_ext_id, "device_type": entry_type, "sender_id": sender_id, "sender_eep": sender_eep, "message": f"Fehler beim Schreiben von {sender_id} ({sender_eep}) in {display_name}: {type(last_exception).__name__}: {last_exception}"})
+                continue
+            if update_result is None:
+                status = "unsupported"
+                message = f"Update für Gerät {display_name} nicht unterstützt."
+            elif update_result is True:
+                status = "updated"
+                message = f"Home-Assistant Sender-ID {sender_id} für EEP {sender_eep} in {display_name} geschrieben."
+            else:
+                status = "exists"
+                message = f"Sender-ID {sender_id} für EEP {sender_eep} in {display_name} existiert bereits."
+            events.append({"status": status, "device_id": device_ext_id, "device_type": entry_type, "sender_id": sender_id, "sender_eep": sender_eep, "message": message})
+            log(message)
     return events
-
 
 async def write_senders(port: str, sender_map_path: str, baud_rate: int = 57600, gateway_type: str = "fam14") -> Dict[str, Any]:
     from eltakobus import locking
@@ -334,7 +327,7 @@ async def write_senders(port: str, sender_map_path: str, baud_rate: int = 57600,
     events: List[Dict[str, Any]] = []
     try:
         delay_message = 0.001 if baud_rate == 57600 else 0.2
-        log("connect", port, baud_rate, gateway_type, "sender entries", len(sender_map))
+        log("connect", port, baud_rate, gateway_type, "sender entries", sum(len(entries) for entries in sender_map.values()))
         bus = RS485SerialInterfaceV2(port, baud_rate=baud_rate, delay_message=delay_message, auto_reconnect=False)
         bus.start()
         bus.is_serial_connected.wait(timeout=2)
@@ -363,20 +356,21 @@ async def write_senders(port: str, sender_map_path: str, baud_rate: int = 57600,
             events.extend(device_events)
             processed_ids.update(e.get("device_id", "") for e in device_events)
 
-        for device_id, entry in sender_map.items():
+        for device_id, entries in sender_map.items():
             if device_id in processed_ids:
                 continue
-            sender_id = norm_id(entry.get("sender", {}).get("id", ""))
-            sender_eep = str(entry.get("sender", {}).get("eep", "")).strip().upper()
-            display_name = _device_display_name(entry, "BusObject", device_id)
-            events.append({
-                "status": "error",
-                "device_id": device_id,
-                "device_type": _entry_device_type(entry),
-                "sender_id": sender_id,
-                "sender_eep": sender_eep,
-                "message": f"Busgerät {display_name} wurde an der erwarteten Series-14-Adresse nicht gefunden.",
-            })
+            for entry in entries:
+                sender_id = norm_id(entry.get("sender", {}).get("id", ""))
+                sender_eep = str(entry.get("sender", {}).get("eep", "")).strip().upper()
+                display_name = _device_display_name(entry, "BusObject", device_id)
+                events.append({
+                    "status": "error",
+                    "device_id": device_id,
+                    "device_type": _entry_device_type(entry),
+                    "sender_id": sender_id,
+                    "sender_eep": sender_eep,
+                    "message": f"Busgerät {display_name} wurde an der erwarteten Series-14-Adresse nicht gefunden.",
+                })
 
         counts: Dict[str, int] = {}
         for event in events:
